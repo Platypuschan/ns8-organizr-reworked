@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -Eeuo pipefail
+exec 1>&2
+
+systemctl --user enable --now organizr.service

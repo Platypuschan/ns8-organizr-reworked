@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+import json
+import os
+import sys
+
+import agent
+import agent.tasks
+
+data = json.load(sys.stdin)
+host = data["host"].strip().rstrip(".")
+http2https = data.get("http2https", True)
+lets_encrypt = data.get("lets_encrypt", False)
+
+agent.set_env("TRAEFIK_HOST", host)
+agent.set_env("TRAEFIK_HTTP2HTTPS", http2https)
+agent.set_env("TRAEFIK_LETS_ENCRYPT", lets_encrypt)
+agent.dump_env()
+
+traefik_id = agent.resolve_agent_id("traefik@node")
+if traefik_id is None:
+    sys.exit(2)
+
+response = agent.tasks.run(
+    agent_id=traefik_id,
+    action="set-route",
+    data={
+        "instance": os.environ["MODULE_ID"],
+        "url": "http://127.0.0.1:" + os.environ["TCP_PORT"],
+        "host": host,
+        "http2https": http2https,
+        "lets_encrypt": lets_encrypt,
+    },
+)
+agent.assert_exp(response["exit_code"] == 0, "Traefik route configuration failed")

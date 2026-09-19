@@ -1,0 +1,19 @@
+{
+  "name": "Organizr",
+  "description": {
+    "en": "A unified dashboard for self-hosted services and bookmarks.",
+    "de": "Ein gemeinsames Dashboard für selbst gehostete Dienste und Lesezeichen."
+  },
+  "categories": [],
+  "authors": [
+    {
+      "name": "Platypuschan"
+    }
+  ],
+  "docs": {
+    "documentation_url": "https://docs.organizr.app/",
+    "bug_url": "https://github.com/Platypuschan/ns8-organizr-reworked/issues",
+    "code_url": "https://github.com/Platypuschan/ns8-organizr-reworked"
+  },
+  "source": "ghcr.io/platypuschan/organizr-reworked"
+}
