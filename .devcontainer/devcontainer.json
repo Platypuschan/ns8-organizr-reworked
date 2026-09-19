@@ -1,0 +1,22 @@
+{
+  "name": "ns8-organizr-reworked",
+  "build": {
+    "dockerfile": "../ui/Containerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "octref.vetur",
+        "streetsidesoftware.code-spell-checker"
+      ]
+    }
+  },
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,Z",
+  "workspaceFolder": "/workspace",
+  "runArgs": ["--userns=keep-id", "--network=host"],
+  "containerUser": "node",
+  "remoteUser": "node",
+  "overrideCommand": true
+}
