@@ -23,6 +23,39 @@ def is_enabled(settings):
     return settings.get("ORGANIZR_AD_ENABLED") == "true"
 
 
+def ensure_recovery_name_free(host, port, base, bind_dn, bind_password):
+    """Prevent an AD login from resolving to Organizr's local administrator."""
+    try:
+        from ldap3 import NONE, SUBTREE, Connection, Server
+
+        server = Server(host, port=port, connect_timeout=10, get_info=NONE)
+        connection = Connection(
+            server, user=bind_dn, password=bind_password,
+            auto_bind=True, receive_timeout=15, raise_exceptions=True,
+        )
+        try:
+            connection.search(
+                search_base=base,
+                search_filter="(sAMAccountName=ns8-recovery-admin)",
+                search_scope=SUBTREE,
+                attributes=["distinguishedName"],
+                size_limit=1,
+            )
+            if connection.entries:
+                raise ReconcileError(
+                    "The name ns8-recovery-admin already exists in AD; "
+                    "reserve it for the local Organizr administrator."
+                )
+            if connection.result.get("result") != 0:
+                raise ReconcileError("The AD account lookup did not complete successfully.")
+        finally:
+            connection.unbind()
+    except ReconcileError:
+        raise
+    except Exception:
+        raise ReconcileError("Could not verify the reserved administrator name in AD.") from None
+
+
 def resolve_ad(settings):
     from agent.ldapproxy import Ldapproxy
 
@@ -52,6 +85,7 @@ def resolve_ad(settings):
     bind_password = str(domain.get("bind_password", ""))
     if not base or not bind_dn or not bind_password:
         raise ReconcileError("The selected AD domain has incomplete LDAP bind settings.")
+    ensure_recovery_name_free(host, port, base, bind_dn, bind_password)
 
     return {
         "authBackendHost": f"ldap://10.0.2.2:{port}",
@@ -127,10 +161,11 @@ def reconcile():
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         wait_ready(f"http://127.0.0.1:{port}")
         if is_enabled(settings):
-            # Keep local authentication available until the application's own
-            # LDAP test succeeds; never enable a broken external backend.
+            # Disable external login before checking for name collisions and
+            # keep local authentication available until LDAP passes its test.
+            request_json(base_url, key, "/config", method="PUT", data={"authType": "internal"})
             ldap = resolve_ad(settings)
-            request_json(base_url, key, "/config", method="PUT", data={"authType": "internal", **ldap})
+            request_json(base_url, key, "/config", method="PUT", data=ldap)
             request_json(base_url, key, "/test/ldap", method="POST", data={})
             request_json(base_url, key, "/config", method="PUT", data={"authType": "both", "authBackend": "ldap"})
         else:

@@ -146,12 +146,7 @@
                   ref="ad_user_search_base"
                 />
                 <p class="setup-help">{{ $t("settings.ad_user_search_base_help") }}</p>
-                <NsInlineNotification
-                  kind="warning"
-                  :title="$t('settings.ad_warning_title')"
-                  :description="$t('settings.ad_warning')"
-                  :showCloseButton="false"
-                />
+                <p class="setup-help">{{ $t("settings.ad_recovery_name_help") }}</p>
               </template>
             </div>
             <cv-accordion

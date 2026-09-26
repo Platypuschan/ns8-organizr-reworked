@@ -69,7 +69,7 @@ Check automated initial setup
     Should Be Equal As Integers    ${rc}    0
     ${mode} =    Execute Command    runagent -m ${module_id} grep '^ORGANIZR_SETUP_MODE=' organizr-setup.env
     Should Contain    ${mode}    managed
-    ${check}    ${rc} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | jq -e '(.username | startswith("ns8-recovery-")) and (.password | length >= 32)'
+    ${check}    ${rc} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | jq -e '.username == "ns8-recovery-admin" and (.password | length >= 32)'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    credentials action failed: ${check}
     ${login} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | curl -sS -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'

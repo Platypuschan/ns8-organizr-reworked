@@ -98,7 +98,7 @@ class SetupTests(unittest.TestCase):
             self.action("configure-module", "18managed_setup")
             password = self.state["organizr-recovery.env"]["ORGANIZR_ADMIN_PASSWORD"]
             username = self.state["organizr-recovery.env"]["ORGANIZR_ADMIN_USERNAME"]
-            self.assertTrue(username.startswith("ns8-recovery-"))
+            self.assertEqual(username, "ns8-recovery-admin")
             self.assertTrue(calls[0][0].endswith("/wizard"))
             self.assertEqual(calls[0][1]["password"], password)
             self.assertEqual(calls[0][1]["username"], username)
@@ -194,13 +194,14 @@ class AdReconcileTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
                 patch.object(self.ldap, "wait_ready"), \
+                patch.object(self.ldap, "ensure_recovery_name_free"), \
                 patch.object(self.ldap, "request_json", side_effect=request):
             self.ldap.reconcile()
-        self.assertEqual([call[0] for call in requests], ["/config", "/test/ldap", "/config"])
+        self.assertEqual([call[0] for call in requests], ["/config", "/config", "/test/ldap", "/config"])
         self.assertEqual(requests[0][2]["authType"], "internal")
-        self.assertEqual(requests[0][2]["authBaseDN"], "DC=example,DC=test")
-        self.assertEqual(requests[0][2]["ldapBindPassword"], "private-bind-secret")
-        self.assertEqual(requests[0][2]["authBackendHost"], "ldap://10.0.2.2:20000")
+        self.assertEqual(requests[1][2]["authBaseDN"], "DC=example,DC=test")
+        self.assertEqual(requests[1][2]["ldapBindPassword"], "private-bind-secret")
+        self.assertEqual(requests[1][2]["authBackendHost"], "ldap://10.0.2.2:20000")
         self.assertEqual(requests[-1][2], {"authType": "both", "authBackend": "ldap"})
 
     def test_bind_failure_does_not_enable_ad_and_disable_restores_local_login(self):
@@ -213,15 +214,51 @@ class AdReconcileTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
                 patch.object(self.ldap, "wait_ready"), \
+                patch.object(self.ldap, "ensure_recovery_name_free"), \
                 patch.object(self.ldap, "request_json", side_effect=request):
             with self.assertRaisesRegex(self.ldap.ReconcileError, "LDAP test failed"):
                 self.ldap.reconcile()
-            self.assertEqual([c[0] for c in requests], ["/config", "/test/ldap"])
+            self.assertEqual([c[0] for c in requests], ["/config", "/config", "/test/ldap"])
             self.state["organizr-ad.env"]["ORGANIZR_AD_ENABLED"] = "false"
             requests.clear()
             self.ldap.reconcile()
             self.assertEqual(requests[0][1]["authType"], "internal")
             self.assertEqual(requests[0][1]["authBackend"], "")
+
+    def test_reserved_name_collision_leaves_only_local_login(self):
+        requests = []
+        with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
+                patch.object(self.ldap, "wait_ready"), \
+                patch.object(self.ldap, "request_json", side_effect=lambda _, __, path, *, method, data: requests.append(data)), \
+                patch.object(self.ldap, "ensure_recovery_name_free", side_effect=self.ldap.ReconcileError("name in AD")):
+            with self.assertRaisesRegex(self.ldap.ReconcileError, "name in AD"):
+                self.ldap.reconcile()
+        self.assertEqual(requests, [{"authType": "internal"}])
+
+    def test_ad_lookup_rejects_reserved_ad_account(self):
+        fake = types.ModuleType("ldap3")
+        fake.NONE = object()
+        fake.SUBTREE = object()
+        fake.Server = lambda *args, **kwargs: object()
+
+        class Connection:
+            def __init__(self, *args, **kwargs):
+                self.entries = []
+                self.result = {"result": 0}
+
+            def search(self, **kwargs):
+                self.entries = ["CN=ns8-recovery-admin,DC=example,DC=test"]
+
+            def unbind(self):
+                pass
+
+        fake.Connection = Connection
+        with patch.dict(sys.modules, {"ldap3": fake}):
+            with self.assertRaisesRegex(self.ldap.ReconcileError, "already exists in AD"):
+                self.ldap.ensure_recovery_name_free(
+                    "127.0.0.1", 20000, "DC=example,DC=test",
+                    "CN=Bind,DC=example,DC=test", "private-bind-secret",
+                )
 
     def test_refuses_untrusted_proxy_host(self):
         proxy = sys.modules["agent.ldapproxy"]

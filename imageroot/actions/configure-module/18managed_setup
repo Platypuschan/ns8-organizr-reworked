@@ -71,9 +71,7 @@ try:
     credentials = agent.read_envfile("organizr-recovery.env")
 except FileNotFoundError:
     credentials = {
-        # An unpredictable name prevents an AD account with the same name
-        # from authenticating as the local administrator in combined mode.
-        "ORGANIZR_ADMIN_USERNAME": "ns8-recovery-" + secrets.token_hex(8),
+        "ORGANIZR_ADMIN_USERNAME": "ns8-recovery-admin",
         "ORGANIZR_ADMIN_PASSWORD": secrets.token_urlsafe(36),
     }
     agent.write_envfile("organizr-recovery.env", credentials)
@@ -81,7 +79,7 @@ except FileNotFoundError:
 
 password = credentials["ORGANIZR_ADMIN_PASSWORD"]
 username = credentials.get("ORGANIZR_ADMIN_USERNAME", "")
-agent.assert_exp(username.startswith("ns8-recovery-") and len(username) >= 28 and len(password) >= 32,
+agent.assert_exp(username == "ns8-recovery-admin" and len(password) >= 32,
                  "Stored administrator credentials are invalid.")
 
 config_exists = subprocess.run(

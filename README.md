@@ -62,7 +62,7 @@ and firewall setup.
 Choose `managed` to let NS8 run Organizr's first-run wizard before the public
 route is created. It uses SQLite inside the persistent volume, generates the
 application keys and a long registration password, and creates a local
-recovery administrator with a randomized username. Expand **Initial administrator** on the module
+`ns8-recovery-admin` account. Expand **Initial administrator** on the module
 settings page to view its username and generated password. The secrets are
 stored in a module state file with mode `0600` and included in NS8 backups.
 The SQLite database is stored at `/config/ns8-organizr-db/organizr.db`, outside
@@ -80,13 +80,9 @@ unit; the default is the domain base DN. The backend accepts any user with valid
 credentials in the selected domain. There is no AD group restriction or AD
 administrator mapping; manage access levels in Organizr.
 
-**Organizr limitation:** In its combined database and backend mode, Organizr
-stores a local hash of each AD user's password. An earlier password can still work
-after an AD password change or account deactivation. Disabling AD integration
-switches Organizr to its local database, which can also authenticate accounts
-previously created from AD. Remove or disable those accounts in Organizr when
-revoking access. This integration should not be used where immediate AD account
-revocation is required.
+Keep the username `ns8-recovery-admin` unused in AD. The module checks for
+an existing AD account with that name before enabling LDAP so that it cannot
+inherit the local administrator's Organizr permissions.
 
 Choose `manual` to use the ordinary Organizr first-run wizard. Open the public
 URL promptly after configuration: until the wizard is completed, anyone with
