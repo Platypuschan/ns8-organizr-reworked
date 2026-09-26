@@ -137,6 +137,41 @@ Check public HTTP route
     ...    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
 
+Check AD login through the NS8 LDAP proxy
+    IF    r'${SCENARIO}' != 'install'
+        Skip    A disposable AD domain is provisioned in the install scenario
+    END
+    ${provider_output}    ${rc} =    Execute Command    api-cli run add-internal-provider --data '{"image":"samba","node":1}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    Samba provider installation failed: ${provider_output}
+    ${provider} =    Evaluate    json.loads(r'''${provider_output}''')['module_id']    modules=json
+    ${defaults}    ${rc} =    Execute Command    api-cli run module/${provider}/get-defaults --data '{"provision":"new-domain"}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    Samba defaults failed: ${defaults}
+    ${ad_ip} =    Evaluate    json.loads(r'''${defaults}''')['ipaddress_list'][0]['ipaddress']    modules=json
+    ${ad_domain} =    Set Variable    ad.organizr.test
+    ${provision}    ${rc} =    Execute Command    api-cli run module/${provider}/configure-module --data '{"provision":"new-domain","realm":"${ad_domain}","nbdomain":"ORGCI","hostname":"dc1","ipaddress":"${ad_ip}","adminuser":"administrator","adminpass":"Nethesis,1234"}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    Samba provisioning failed: ${provision}
+    ${user_output}    ${rc} =    Execute Command    api-cli run module/${provider}/add-user --data '{"user":"ns8-ci-user","display_name":"NS8 CI User","password":"Nethesis,1234","locked":false,"groups":[],"must_change_password":false}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    AD test user creation failed: ${user_output}
+    ${ad_config}    ${rc} =    Execute Command    api-cli run module/${module_id}/configure-module --data '{"host":"${HOST}","http2https":false,"lets_encrypt":false,"setup_mode":"managed","ad_enabled":true,"ad_domain":"${ad_domain}"}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    Organizr AD setup failed: ${ad_config}
+    ${ad_login} =    Execute Command    curl -sS -H 'Content-Type: application/json' --data '{"username":"ns8-ci-user","password":"Nethesis,1234"}' http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'
+    ${ad_login} =    Strip String    ${ad_login}
+    Should Be Equal    ${ad_login}    success
+    ${recovery_login} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | curl -sS -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'
+    ${recovery_login} =    Strip String    ${recovery_login}
+    Should Be Equal    ${recovery_login}    success
+    ${disabled}    ${rc} =    Execute Command    api-cli run module/${module_id}/configure-module --data '{"host":"${HOST}","http2https":false,"lets_encrypt":false,"setup_mode":"managed","ad_enabled":false}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    Organizr AD disable failed: ${disabled}
+    ${removed}    ${rc} =    Execute Command    api-cli run remove-internal-domain --data '{"domain":"${ad_domain}"}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    AD test domain removal failed: ${removed}
+
 Take UI screenshots
     [Tags]    ui
     Import Library    Browser

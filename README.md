@@ -160,7 +160,9 @@ remove-module --no-preserve organizr-reworked1
 
 Static checks and the UI build run for every push and pull request. The module
 also includes Robot Framework install and update scenarios for the reusable
-NS8 QEMU test workflow.
+NS8 QEMU test workflow. The install scenario provisions a disposable Samba AD
+domain, signs in to Organizr with an AD user, checks the recovery administrator,
+then removes the test domain.
 
 The Organizr logo bundled in the module UI comes from the GPL-3.0-licensed
 [Organizr repository](https://github.com/causefx/Organizr).
