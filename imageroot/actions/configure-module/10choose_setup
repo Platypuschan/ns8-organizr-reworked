@@ -17,6 +17,31 @@ requested = data["setup_mode"]
 agent.assert_exp(requested in {"manual", "managed"}, "Choose manual or managed setup.")
 agent.assert_exp(current in {"pending", requested}, "The setup mode cannot be changed after initial configuration.")
 
+ad = agent.read_envfile("organizr-ad.env")
+ad_fields = {"ad_enabled", "ad_domain", "ad_user_search_base"}
+if requested == "manual":
+    agent.assert_exp(not data.get("ad_enabled", False),
+                     "NS8-managed AD login requires managed setup mode.")
+elif ad_fields.intersection(data):
+    enabled = data.get("ad_enabled", False)
+    domain = data.get("ad_domain", "").strip()
+    search_base = data.get("ad_user_search_base", "").strip()
+    agent.assert_exp(not enabled or domain, "Select an NS8 Active Directory domain.")
+    ad.update({
+        "ORGANIZR_AD_ENABLED": str(enabled).lower(),
+        "ORGANIZR_AD_MANAGED": str(enabled or ad.get("ORGANIZR_AD_MANAGED") == "true").lower(),
+        "ORGANIZR_AD_DOMAIN": domain,
+        "ORGANIZR_AD_USER_SEARCH_BASE": search_base,
+    })
+
+# Bind before persisting the setup choice, so an unavailable domain leaves the
+# initial request retryable and account-domain events reach this module.
+agent.bind_user_domains(
+    [ad["ORGANIZR_AD_DOMAIN"]] if ad["ORGANIZR_AD_ENABLED"] == "true" else [],
+    check=True,
+)
 setup["ORGANIZR_SETUP_MODE"] = requested
 agent.write_envfile("organizr-setup.env", setup)
 os.chmod("organizr-setup.env", 0o600)
+agent.write_envfile("organizr-ad.env", ad)
+os.chmod("organizr-ad.env", 0o600)

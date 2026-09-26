@@ -12,6 +12,7 @@ The module provides:
 - integration with the NS8 backup, clone, restore, status and log views
 - a rootless Podman service with one loopback-only backend port
 - a one-time choice between Organizr's wizard and unattended NS8 setup
+- optional NS8-managed Active Directory login through the host's LDAP proxy
 
 ## Runtime design
 
@@ -47,7 +48,9 @@ api-cli run module/organizr-reworked1/configure-module --data - <<'EOF'
   "host": "organizr.example.test",
   "http2https": true,
   "lets_encrypt": false,
-  "setup_mode": "managed"
+  "setup_mode": "managed",
+  "ad_enabled": true,
+  "ad_domain": "ad.example.test"
 }
 EOF
 ~~~
@@ -59,13 +62,31 @@ and firewall setup.
 Choose `managed` to let NS8 run Organizr's first-run wizard before the public
 route is created. It uses SQLite inside the persistent volume, generates the
 application keys and a long registration password, and creates a local
-`ns8-recovery-admin` account. Expand **Initial administrator** on the module
+recovery administrator with a randomized username. Expand **Initial administrator** on the module
 settings page to view its username and generated password. The secrets are
 stored in a module state file with mode `0600` and included in NS8 backups.
 The SQLite database is stored at `/config/ns8-organizr-db/organizr.db`, outside
-the web root. Tabs, LDAP and other Organizr settings remain editable in the
-Organizr web interface. Changing this administrator's password inside Organizr
+the web root. Tabs and other Organizr settings remain editable in its web
+interface. Changing this administrator's password inside Organizr
 does not change the password shown in NS8.
+
+For direct AD login, select **Active Directory login** and an NS8 AD account
+domain in the module settings, or supply `ad_enabled` and `ad_domain` as in the
+example. NS8 binds the domain and configures Organizr's LDAP backend through
+its local LDAP proxy. The first successful sign-in creates an Organizr account
+for that AD username. The local administrator remains available. Optionally set
+`ad_user_search_base` to an LDAP DN to limit the search to one organizational
+unit; the default is the domain base DN. The backend accepts any user with valid
+credentials in the selected domain. There is no AD group restriction or AD
+administrator mapping; manage access levels in Organizr.
+
+**Organizr limitation:** In its combined database and backend mode, Organizr
+stores a local hash of each AD user's password. An earlier password can still work
+after an AD password change or account deactivation. Disabling AD integration
+switches Organizr to its local database, which can also authenticate accounts
+previously created from AD. Remove or disable those accounts in Organizr when
+revoking access. This integration should not be used where immediate AD account
+revocation is required.
 
 Choose `manual` to use the ordinary Organizr first-run wizard. Open the public
 URL promptly after configuration: until the wizard is completed, anyone with
@@ -73,7 +94,8 @@ network access can create the first administrator. To select this mode via the
 API, set `"setup_mode": "manual"`. The setup mode is required for every
 configuration request; the settings page sends the saved mode after setup.
 
-The setup mode is fixed as soon as the first configuration begins. To change
+AD integration requires managed setup; manual setup leaves the Organizr LDAP
+settings to you. The setup mode is fixed as soon as the first configuration begins. To change
 it, install a separate instance and migrate its data.
 
 Retrieve the current NS8 route configuration with:
@@ -86,9 +108,9 @@ api-cli run module/organizr-reworked1/get-configuration
 
 NS8 backs up the complete `organizr-app` volume. It contains the Organizr
 working tree, SQLite data, uploaded assets and the container's nginx/PHP
-configuration. The setup mode and generated administrator credentials are
-included as module state files. A restored or cloned instance recreates its
-Traefik route and starts with the restored volume.
+configuration. The setup mode, AD selection, API key and generated administrator
+credentials are included as module state files. A restored or cloned instance
+recreates its Traefik route and refreshes its LDAP bind settings from NS8.
 
 For the most consistent backup, avoid changing Organizr settings while the
 backup is running. To eliminate writes completely, stop the service for the

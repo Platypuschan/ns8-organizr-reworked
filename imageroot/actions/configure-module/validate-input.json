@@ -28,6 +28,23 @@
       "title": "Initial setup mode",
       "description": "Choose the Organizr wizard or unattended NS8 setup; the choice is fixed once initialization begins.",
       "enum": ["manual", "managed"]
+    },
+    "ad_enabled": {
+      "type": "boolean",
+      "title": "Active Directory login",
+      "default": false
+    },
+    "ad_domain": {
+      "type": "string",
+      "title": "NS8 Active Directory account domain",
+      "maxLength": 253,
+      "default": ""
+    },
+    "ad_user_search_base": {
+      "type": "string",
+      "title": "Optional AD search base DN; defaults to the domain base DN",
+      "maxLength": 2048,
+      "default": ""
     }
   },
   "examples": [
@@ -35,7 +52,9 @@
       "host": "organizr.example.org",
       "http2https": true,
       "lets_encrypt": false,
-      "setup_mode": "managed"
+      "setup_mode": "managed",
+      "ad_enabled": true,
+      "ad_domain": "ad.example.org"
     }
   ]
 }

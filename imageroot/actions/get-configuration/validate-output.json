@@ -5,7 +5,7 @@
   "description": "Return the Organizr virtual host configuration",
   "type": "object",
   "additionalProperties": false,
-  "required": ["host", "http2https", "lets_encrypt", "setup_mode"],
+  "required": ["host", "http2https", "lets_encrypt", "setup_mode", "ad_enabled", "ad_domain", "ad_user_search_base"],
   "properties": {
     "host": {
       "type": "string",
@@ -22,6 +22,15 @@
     "setup_mode": {
       "type": "string",
       "enum": ["pending", "manual", "managed"]
+    },
+    "ad_enabled": {
+      "type": "boolean"
+    },
+    "ad_domain": {
+      "type": "string"
+    },
+    "ad_user_search_base": {
+      "type": "string"
     }
   }
 }

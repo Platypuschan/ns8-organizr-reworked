@@ -69,12 +69,15 @@ Check automated initial setup
     Should Be Equal As Integers    ${rc}    0
     ${mode} =    Execute Command    runagent -m ${module_id} grep '^ORGANIZR_SETUP_MODE=' organizr-setup.env
     Should Contain    ${mode}    managed
-    ${check}    ${rc} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | jq -e '.username == "ns8-recovery-admin" and (.password | length >= 32)'
+    ${check}    ${rc} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | jq -e '(.username | startswith("ns8-recovery-")) and (.password | length >= 32)'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    credentials action failed: ${check}
     ${login} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | curl -sS -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'
     ${login} =    Strip String    ${login}
     Should Be Equal    ${login}    success
+    ${api_auth} =    Execute Command    runagent -m ${module_id} sh -c '. ./organizr-api.env; curl -fsS -H "Token: $ORGANIZR_API_KEY" http://127.0.0.1:${web_port}/api/v2/config/authType | jq -r ".response.result"'
+    ${api_auth} =    Strip String    ${api_auth}
+    Should Be Equal    ${api_auth}    success
     ${rc} =    Execute Command    api-cli run module/${module_id}/configure-module --data '{"host":"${HOST}","http2https":false,"lets_encrypt":false,"setup_mode":"manual"}'
     ...    return_rc=True    return_stdout=False
     Should Not Be Equal As Integers    ${rc}    0
@@ -86,6 +89,7 @@ Check configuration API
     Should Be Equal    ${config_object}[http2https]    ${False}
     Should Be Equal    ${config_object}[lets_encrypt]    ${False}
     Should Be Equal    ${config_object}[setup_mode]    managed
+    Should Be Equal    ${config_object}[ad_enabled]    ${False}
 
 Manual setup keeps the Organizr wizard
     IF    r'${SCENARIO}' != 'install'

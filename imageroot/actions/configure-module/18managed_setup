@@ -26,7 +26,6 @@ if setup.get("ORGANIZR_SETUP_COMPLETE") == "true":
 port = os.environ.get("TCP_PORT", "")
 agent.assert_exp(port.isdecimal() and 0 < int(port) < 65536, "Invalid Organizr web port.")
 base_url = f"http://127.0.0.1:{port}"
-username = "ns8-recovery-admin"
 
 
 def post_json(path, data):
@@ -72,14 +71,17 @@ try:
     credentials = agent.read_envfile("organizr-recovery.env")
 except FileNotFoundError:
     credentials = {
-        "ORGANIZR_ADMIN_USERNAME": username,
+        # An unpredictable name prevents an AD account with the same name
+        # from authenticating as the local administrator in combined mode.
+        "ORGANIZR_ADMIN_USERNAME": "ns8-recovery-" + secrets.token_hex(8),
         "ORGANIZR_ADMIN_PASSWORD": secrets.token_urlsafe(36),
     }
     agent.write_envfile("organizr-recovery.env", credentials)
     os.chmod("organizr-recovery.env", 0o600)
 
 password = credentials["ORGANIZR_ADMIN_PASSWORD"]
-agent.assert_exp(credentials.get("ORGANIZR_ADMIN_USERNAME") == username and len(password) >= 32,
+username = credentials.get("ORGANIZR_ADMIN_USERNAME", "")
+agent.assert_exp(username.startswith("ns8-recovery-") and len(username) >= 28 and len(password) >= 32,
                  "Stored administrator credentials are invalid.")
 
 config_exists = subprocess.run(
@@ -95,12 +97,15 @@ if not config_exists:
     except FileNotFoundError:
         bootstrap = {
             "ORGANIZR_HASH_KEY": secrets.token_urlsafe(48),
-            "ORGANIZR_API_KEY": secrets.token_urlsafe(48),
+            # Organizr recognizes static API keys only when they are 20 chars.
+            "ORGANIZR_API_KEY": secrets.token_urlsafe(15),
             "ORGANIZR_REGISTRATION_PASSWORD": secrets.token_urlsafe(48),
         }
         agent.write_envfile("organizr-bootstrap.env", bootstrap)
         os.chmod("organizr-bootstrap.env", 0o600)
 
+    agent.assert_exp(len(bootstrap["ORGANIZR_API_KEY"]) == 20,
+                     "The generated Organizr API key must be 20 characters long.")
     result = post_json("/api/v2/wizard", {
         "driver": "sqlite3",
         "dbPath": "/config/ns8-organizr-db/",
@@ -122,6 +127,13 @@ result = post_json("/api/v2/login", {"username": username, "password": password}
 agent.assert_exp(result.get("response", {}).get("result") == "success",
                  "The generated Organizr administrator cannot sign in.")
 
+# Retain the key separately from the temporary wizard state for AD
+# reconciliation after restarts and NS8 account-domain changes.
+bootstrap = agent.read_envfile("organizr-bootstrap.env")
+agent.assert_exp(len(bootstrap["ORGANIZR_API_KEY"]) == 20,
+                 "The stored Organizr API key must be 20 characters long.")
+agent.write_envfile("organizr-api.env", {"ORGANIZR_API_KEY": bootstrap["ORGANIZR_API_KEY"]})
+os.chmod("organizr-api.env", 0o600)
 setup["ORGANIZR_SETUP_COMPLETE"] = "true"
 agent.write_envfile("organizr-setup.env", setup)
 os.chmod("organizr-setup.env", 0o600)

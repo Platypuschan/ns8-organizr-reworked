@@ -105,6 +105,55 @@
                 :showCloseButton="false"
               />
             </div>
+            <div v-if="setupMode === 'managed'" class="setup-settings mg-bottom">
+              <h3>{{ $t("settings.ad_title") }}</h3>
+              <p class="setup-help">{{ $t("settings.ad_description") }}</p>
+              <cv-toggle
+                value="adAuthentication"
+                :label="$t('settings.ad_enabled')"
+                v-model="isAdEnabled"
+                :disabled="loading.getConfiguration || loading.configureModule"
+                class="mg-bottom"
+              >
+                <template slot="text-left">{{ $t("settings.disabled") }}</template>
+                <template slot="text-right">{{ $t("settings.enabled") }}</template>
+              </cv-toggle>
+              <template v-if="isAdEnabled">
+                <NsInlineNotification
+                  v-if="error.listUserDomains"
+                  kind="error"
+                  :title="$t('action.list-user-domains')"
+                  :description="error.listUserDomains"
+                  :showCloseButton="false"
+                />
+                <NsComboBox
+                  v-model="adDomain"
+                  :options="adDomains"
+                  auto-highlight
+                  :title="$t('settings.ad_domain')"
+                  :label="$t('settings.ad_domain_placeholder')"
+                  :invalid-message="$t(error.ad_domain)"
+                  :disabled="loading.getConfiguration || loading.configureModule || loading.listUserDomains"
+                  class="mg-bottom"
+                  ref="ad_domain"
+                />
+                <cv-text-input
+                  :label="$t('settings.ad_user_search_base')"
+                  v-model.trim="adUserSearchBase"
+                  :invalid-message="$t(error.ad_user_search_base)"
+                  :disabled="loading.getConfiguration || loading.configureModule"
+                  class="mg-bottom"
+                  ref="ad_user_search_base"
+                />
+                <p class="setup-help">{{ $t("settings.ad_user_search_base_help") }}</p>
+                <NsInlineNotification
+                  kind="warning"
+                  :title="$t('settings.ad_warning_title')"
+                  :description="$t('settings.ad_warning')"
+                  :showCloseButton="false"
+                />
+              </template>
+            </div>
             <cv-accordion
               v-if="setupModeState === 'managed'"
               class="mg-bottom"
@@ -203,6 +252,10 @@ export default {
       host: "",
       setupMode: "",
       setupModeState: "pending",
+      isAdEnabled: false,
+      adDomain: "",
+      adDomains: [],
+      adUserSearchBase: "",
       adminUsername: "",
       adminPassword: "",
       credentialsLoaded: false,
@@ -213,6 +266,7 @@ export default {
         getConfiguration: false,
         configureModule: false,
         getCredentials: false,
+        listUserDomains: false,
       },
       error: {
         getConfiguration: "",
@@ -222,6 +276,9 @@ export default {
         http2https: "",
         setup_mode: "",
         getCredentials: "",
+        listUserDomains: "",
+        ad_domain: "",
+        ad_user_search_base: "",
       },
     };
   },
@@ -230,6 +287,7 @@ export default {
   },
   created() {
     this.getConfiguration();
+    this.listUserDomains();
   },
   beforeRouteEnter(to, from, next) {
     next((vm) => {
@@ -293,6 +351,9 @@ export default {
       this.host = config.host;
       this.setupModeState = config.setup_mode;
       this.setupMode = config.setup_mode === "pending" ? "" : config.setup_mode;
+      this.isAdEnabled = config.ad_enabled;
+      this.adDomain = config.ad_domain;
+      this.adUserSearchBase = config.ad_user_search_base;
       this.isLetsEncryptEnabled = config.lets_encrypt;
       this.isHttpToHttpsEnabled = config.http2https;
 
@@ -315,6 +376,13 @@ export default {
         this.error.setup_mode = "common.required";
         if (isValidationOk) {
           this.focusElement("setup_mode");
+        }
+        isValidationOk = false;
+      }
+      if (this.setupMode === "managed" && this.isAdEnabled && !this.adDomain) {
+        this.error.ad_domain = "common.required";
+        if (isValidationOk) {
+          this.focusElement("ad_domain");
         }
         isValidationOk = false;
       }
@@ -370,6 +438,9 @@ export default {
             lets_encrypt: this.isLetsEncryptEnabled,
             http2https: this.isHttpToHttpsEnabled,
             setup_mode: this.setupMode,
+            ad_enabled: this.setupMode === "managed" && this.isAdEnabled,
+            ad_domain: this.adDomain,
+            ad_user_search_base: this.adUserSearchBase,
           },
           extra: {
             title: this.$t("settings.instance_configuration", {
@@ -399,6 +470,46 @@ export default {
 
       // reload configuration
       this.getConfiguration();
+    },
+    async listUserDomains() {
+      this.loading.listUserDomains = true;
+      this.error.listUserDomains = "";
+      const taskAction = "list-user-domains";
+      const eventId = this.getUuid();
+      this.core.$root.$once(
+        `${taskAction}-aborted-${eventId}`,
+        () => {
+          this.error.listUserDomains = this.$t("error.generic_error");
+          this.loading.listUserDomains = false;
+        }
+      );
+      this.core.$root.$once(
+        `${taskAction}-completed-${eventId}`,
+        (taskContext, taskResult) => {
+          this.adDomains = taskResult.output.domains
+            .filter((domain) => domain.schema === "ad")
+            .map((domain) => ({
+              name: domain.name,
+              label: domain.name,
+              value: domain.name,
+            }));
+          this.loading.listUserDomains = false;
+        }
+      );
+      const [err] = await to(
+        this.createClusterTaskForApp({
+          action: taskAction,
+          extra: {
+            title: this.$t("action." + taskAction),
+            isNotificationHidden: true,
+            eventId,
+          },
+        })
+      );
+      if (err) {
+        this.error.listUserDomains = this.getErrorMessage(err);
+        this.loading.listUserDomains = false;
+      }
     },
     credentialsAccordionChanged({ changedIndex, state }) {
       if (changedIndex !== 0) return;

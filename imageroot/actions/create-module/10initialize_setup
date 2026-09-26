@@ -11,3 +11,10 @@ import agent
 json.load(sys.stdin)
 agent.write_envfile("organizr-setup.env", {"ORGANIZR_SETUP_MODE": "pending"})
 os.chmod("organizr-setup.env", 0o600)
+agent.write_envfile("organizr-ad.env", {
+    "ORGANIZR_AD_ENABLED": "false",
+    "ORGANIZR_AD_MANAGED": "false",
+    "ORGANIZR_AD_DOMAIN": "",
+    "ORGANIZR_AD_USER_SEARCH_BASE": "",
+})
+os.chmod("organizr-ad.env", 0o600)
