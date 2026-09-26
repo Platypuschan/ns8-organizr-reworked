@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+import json
+import sys
+
+import agent
+
+json.load(sys.stdin)
+try:
+    setup = agent.read_envfile("organizr-setup.env")
+    agent.assert_exp(setup.get("ORGANIZR_SETUP_MODE") == "managed" and
+                     setup.get("ORGANIZR_SETUP_COMPLETE") == "true",
+                     "Managed setup has not completed.")
+    credentials = agent.read_envfile("organizr-recovery.env")
+except FileNotFoundError:
+    agent.assert_exp(False, "Managed administrator credentials are unavailable.")
+
+json.dump({
+    "username": credentials["ORGANIZR_ADMIN_USERNAME"],
+    "password": credentials["ORGANIZR_ADMIN_PASSWORD"],
+}, sys.stdout)

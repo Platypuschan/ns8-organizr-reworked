@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+"""Run Organizr's own first-run wizard before publishing the Traefik route."""
+
+import json
+import os
+import secrets
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+import agent
+
+json.load(sys.stdin)
+setup = agent.read_envfile("organizr-setup.env")
+if setup["ORGANIZR_SETUP_MODE"] != "managed":
+    sys.exit(0)
+if setup.get("ORGANIZR_SETUP_COMPLETE") == "true":
+    sys.exit(0)
+
+port = os.environ.get("TCP_PORT", "")
+agent.assert_exp(port.isdecimal() and 0 < int(port) < 65536, "Invalid Organizr web port.")
+base_url = f"http://127.0.0.1:{port}"
+
+
+def post_json(path, data):
+    request = urllib.request.Request(
+        base_url + path,
+        data=json.dumps(data).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        # Do not include the request body, response body, or credentials in logs.
+        raise RuntimeError(f"Organizr returned HTTP {error.code} during initial setup.") from None
+    except (OSError, ValueError) as error:
+        raise RuntimeError(f"Organizr did not return a valid setup response ({type(error).__name__}).") from None
+
+
+def successful(response):
+    return response.get("response", {}).get("result") == "success" and response["response"].get("data") is True
+
+
+def wait_until_ready():
+    deadline = time.monotonic() + 300
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(base_url + "/", timeout=3) as response:
+                if response.status == 200:
+                    return
+        except (OSError, urllib.error.HTTPError):
+            pass
+        time.sleep(3)
+    raise RuntimeError("Organizr did not become ready within five minutes.")
+
+
+# Keep the newly started service reachable only through the loopback port until
+# the wizard has completed. The following action registers the public route.
+subprocess.run(["systemctl", "--user", "enable", "--now", "organizr.service"], check=True, stdout=subprocess.DEVNULL)
+wait_until_ready()
+
+try:
+    credentials = agent.read_envfile("organizr-recovery.env")
+except FileNotFoundError:
+    credentials = {
+        "ORGANIZR_ADMIN_USERNAME": "ns8-recovery-admin",
+        "ORGANIZR_ADMIN_PASSWORD": secrets.token_urlsafe(36),
+    }
+    agent.write_envfile("organizr-recovery.env", credentials)
+    os.chmod("organizr-recovery.env", 0o600)
+
+password = credentials["ORGANIZR_ADMIN_PASSWORD"]
+username = credentials.get("ORGANIZR_ADMIN_USERNAME", "")
+agent.assert_exp(username == "ns8-recovery-admin" and len(password) >= 32,
+                 "Stored administrator credentials are invalid.")
+
+config_exists = subprocess.run(
+    ["podman", "exec", "organizr", "test", "-f", "/config/www/organizr/data/config/config.php"],
+    check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+).returncode == 0
+
+# A previous run may have completed the wizard before recording completion.
+# The login check below verifies that the generated account owns that setup.
+if not config_exists:
+    try:
+        bootstrap = agent.read_envfile("organizr-bootstrap.env")
+    except FileNotFoundError:
+        bootstrap = {
+            "ORGANIZR_HASH_KEY": secrets.token_urlsafe(48),
+            # Organizr recognizes static API keys only when they are 20 chars.
+            "ORGANIZR_API_KEY": secrets.token_urlsafe(15),
+            "ORGANIZR_REGISTRATION_PASSWORD": secrets.token_urlsafe(48),
+        }
+        agent.write_envfile("organizr-bootstrap.env", bootstrap)
+        os.chmod("organizr-bootstrap.env", 0o600)
+
+    agent.assert_exp(len(bootstrap["ORGANIZR_API_KEY"]) == 20,
+                     "The generated Organizr API key must be 20 characters long.")
+    result = post_json("/api/v2/wizard", {
+        "driver": "sqlite3",
+        "dbPath": "/config/ns8-organizr-db/",
+        "dbName": "organizr.db",
+        "license": "personal",
+        "hashKey": bootstrap["ORGANIZR_HASH_KEY"],
+        "api": bootstrap["ORGANIZR_API_KEY"],
+        "registrationPassword": bootstrap["ORGANIZR_REGISTRATION_PASSWORD"],
+        "username": username,
+        "password": password,
+        "email": "ns8-recovery-admin@localhost.invalid",
+    })
+    agent.assert_exp(successful(result), "Organizr did not complete its first-run wizard.")
+
+# Check that the account can actually authenticate before exposing the site.
+# Organizr's login route does not put login()'s return value in `data`;
+# unsuccessful authentication sets `result` to error and returns HTTP 401.
+result = post_json("/api/v2/login", {"username": username, "password": password})
+agent.assert_exp(result.get("response", {}).get("result") == "success",
+                 "The generated Organizr administrator cannot sign in.")
+
+# Retain the key separately from the temporary wizard state for AD
+# reconciliation after restarts and NS8 account-domain changes.
+bootstrap = agent.read_envfile("organizr-bootstrap.env")
+agent.assert_exp(len(bootstrap["ORGANIZR_API_KEY"]) == 20,
+                 "The stored Organizr API key must be 20 characters long.")
+agent.write_envfile("organizr-api.env", {"ORGANIZR_API_KEY": bootstrap["ORGANIZR_API_KEY"]})
+os.chmod("organizr-api.env", 0o600)
+setup["ORGANIZR_SETUP_COMPLETE"] = "true"
+agent.write_envfile("organizr-setup.env", setup)
+os.chmod("organizr-setup.env", 0o600)
+Path("organizr-bootstrap.env").unlink(missing_ok=True)
