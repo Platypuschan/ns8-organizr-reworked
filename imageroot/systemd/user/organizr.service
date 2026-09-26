@@ -15,6 +15,7 @@ ExecStartPre=/bin/rm -f %t/organizr.pid %t/organizr.ctr-id
 ExecStart=/usr/bin/podman run --conmon-pidfile %t/organizr.pid \
     --cidfile %t/organizr.ctr-id --cgroups=no-conmon \
     --replace --detach --name organizr \
+    --network=slirp4netns:allow_host_loopback=true \
     --publish 127.0.0.1:${TCP_PORT}:80 \
     --volume organizr-app:/config:Z \
     --env PUID=1000 \
@@ -27,6 +28,7 @@ ExecStopPost=/usr/bin/podman rm --ignore -f --cidfile %t/organizr.ctr-id
 SyslogIdentifier=%u
 PIDFile=%t/organizr.pid
 Type=forking
+ExecStartPost=-runagent reconcile-organizr-ad
 
 [Install]
 WantedBy=default.target

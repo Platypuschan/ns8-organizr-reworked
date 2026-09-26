@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+import json
+import subprocess
+import sys
+
+import agent
+
+try:
+    event = json.load(sys.stdin)
+    settings = agent.read_envfile("organizr-ad.env")
+except (ValueError, FileNotFoundError):
+    sys.exit(0)
+
+if (settings.get("ORGANIZR_AD_ENABLED") == "true"
+        and settings.get("ORGANIZR_AD_DOMAIN") in event.get("domains", [])
+        and subprocess.run(["systemctl", "--user", "is-active", "--quiet", "organizr.service"],
+                           check=False).returncode == 0):
+    # A later domain event or service start retries any transient failure.
+    subprocess.run(["runagent", "reconcile-organizr-ad"], check=False)
