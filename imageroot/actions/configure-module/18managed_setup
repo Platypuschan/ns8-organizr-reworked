@@ -87,15 +87,9 @@ config_exists = subprocess.run(
     check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
 ).returncode == 0
 
-if config_exists:
-    # A previous run may have completed the upstream wizard but stopped before
-    # recording completion. Only adopt it if our generated account can log in.
-    result = post_json("/api/v2/login", {"username": username, "password": password})
-    # Organizr's login route does not put login()'s return value in `data`;
-    # unsuccessful authentication sets `result` to error and returns HTTP 401.
-    agent.assert_exp(result.get("response", {}).get("result") == "success",
-                     "Organizr is already initialized, but the saved administrator credentials do not work.")
-else:
+# A previous run may have completed the wizard before recording completion.
+# The login check below verifies that the generated account owns that setup.
+if not config_exists:
     try:
         bootstrap = agent.read_envfile("organizr-bootstrap.env")
     except FileNotFoundError:
@@ -120,6 +114,13 @@ else:
         "email": "ns8-recovery-admin@localhost.invalid",
     })
     agent.assert_exp(successful(result), "Organizr did not complete its first-run wizard.")
+
+# Check that the account can actually authenticate before exposing the site.
+# Organizr's login route does not put login()'s return value in `data`;
+# unsuccessful authentication sets `result` to error and returns HTTP 401.
+result = post_json("/api/v2/login", {"username": username, "password": password})
+agent.assert_exp(result.get("response", {}).get("result") == "success",
+                 "The generated Organizr administrator cannot sign in.")
 
 setup["ORGANIZR_SETUP_COMPLETE"] = "true"
 agent.write_envfile("organizr-setup.env", setup)

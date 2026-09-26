@@ -98,7 +98,9 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(calls[0][1]["password"], password)
             self.assertEqual(calls[0][1]["dbPath"], "/config/ns8-organizr-db/")
             self.assertEqual(self.state["organizr-setup.env"]["ORGANIZR_SETUP_COMPLETE"], "true")
-            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[1][1]["password"], password)
+            self.assertTrue(calls[1][0].endswith("/login"))
+            self.assertEqual(len(calls), 2)
             with self.assertRaises(SystemExit):
                 self.action("configure-module", "18managed_setup")
             self.assertEqual(self.state["organizr-recovery.env"]["ORGANIZR_ADMIN_PASSWORD"], password)
