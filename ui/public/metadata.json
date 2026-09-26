@@ -4,7 +4,7 @@
     "en": "A unified dashboard for self-hosted services and bookmarks.",
     "de": "Ein gemeinsames Dashboard für selbst gehostete Dienste und Lesezeichen."
   },
-  "categories": [],
+  "categories": ["collaboration"],
   "authors": [
     {
       "name": "Platypuschan"
