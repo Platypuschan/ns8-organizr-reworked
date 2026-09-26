@@ -23,10 +23,11 @@ def is_enabled(settings):
     return settings.get("ORGANIZR_AD_ENABLED") == "true"
 
 
-def ensure_recovery_name_free(host, port, base, bind_dn, bind_password):
+def ensure_recovery_name_free(host, port, base, bind_dn, bind_password, domain_name):
     """Prevent an AD login from resolving to Organizr's local administrator."""
     try:
         from ldap3 import NONE, SUBTREE, Connection, Server
+        from ldap3.utils.conv import escape_filter_chars
 
         server = Server(host, port=port, connect_timeout=10, get_info=NONE)
         connection = Connection(
@@ -36,7 +37,8 @@ def ensure_recovery_name_free(host, port, base, bind_dn, bind_password):
         try:
             connection.search(
                 search_base=base,
-                search_filter="(sAMAccountName=ns8-recovery-admin)",
+                search_filter="(|(sAMAccountName=ns8-recovery-admin)"
+                f"(userPrincipalName={escape_filter_chars('ns8-recovery-admin@' + domain_name)}))",
                 search_scope=SUBTREE,
                 attributes=["distinguishedName"],
                 size_limit=1,
@@ -85,7 +87,7 @@ def resolve_ad(settings):
     bind_password = str(domain.get("bind_password", ""))
     if not base or not bind_dn or not bind_password:
         raise ReconcileError("The selected AD domain has incomplete LDAP bind settings.")
-    ensure_recovery_name_free(host, port, base, bind_dn, bind_password)
+    ensure_recovery_name_free(host, port, base, bind_dn, bind_password, domain_name)
 
     return {
         "authBackendHost": f"ldap://10.0.2.2:{port}",

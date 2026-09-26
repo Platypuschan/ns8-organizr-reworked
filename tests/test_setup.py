@@ -241,6 +241,10 @@ class AdReconcileTests(unittest.TestCase):
         fake.NONE = object()
         fake.SUBTREE = object()
         fake.Server = lambda *args, **kwargs: object()
+        fake_utils = types.ModuleType("ldap3.utils")
+        fake_conv = types.ModuleType("ldap3.utils.conv")
+        fake_conv.escape_filter_chars = lambda value: value
+        searches = []
 
         class Connection:
             def __init__(self, *args, **kwargs):
@@ -248,18 +252,24 @@ class AdReconcileTests(unittest.TestCase):
                 self.result = {"result": 0}
 
             def search(self, **kwargs):
-                self.entries = ["CN=ns8-recovery-admin,DC=example,DC=test"]
+                searches.append(kwargs["search_filter"])
+                # The UPN can match the recovery login even if the AD account
+                # has a different sAMAccountName.
+                self.entries = ["CN=different-account,DC=example,DC=test"]
 
             def unbind(self):
                 pass
 
         fake.Connection = Connection
-        with patch.dict(sys.modules, {"ldap3": fake}):
+        with patch.dict(sys.modules, {"ldap3": fake, "ldap3.utils": fake_utils,
+                                      "ldap3.utils.conv": fake_conv}):
             with self.assertRaisesRegex(self.ldap.ReconcileError, "already exists in AD"):
                 self.ldap.ensure_recovery_name_free(
                     "127.0.0.1", 20000, "DC=example,DC=test",
-                    "CN=Bind,DC=example,DC=test", "private-bind-secret",
+                    "CN=Bind,DC=example,DC=test", "private-bind-secret", "ad.example.test",
                 )
+        self.assertIn("(sAMAccountName=ns8-recovery-admin)", searches[0])
+        self.assertIn("(userPrincipalName=ns8-recovery-admin@ad.example.test)", searches[0])
 
     def test_refuses_untrusted_proxy_host(self):
         proxy = sys.modules["agent.ldapproxy"]
