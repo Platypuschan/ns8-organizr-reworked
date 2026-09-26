@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+import json
+import os
+import sys
+
+import agent
+
+json.load(sys.stdin)
+agent.write_envfile("organizr-setup.env", {"ORGANIZR_SETUP_MODE": "pending"})
+os.chmod("organizr-setup.env", 0o600)

@@ -78,6 +78,9 @@ jobs:
             exit 1
           fi
 
+      - name: Check setup lifecycle
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
       - name: Check module wiring
         shell: bash
         run: |

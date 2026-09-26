@@ -61,6 +61,92 @@
                 $t("settings.enabled")
               }}</template>
             </cv-toggle>
+            <div class="setup-settings mg-bottom">
+              <h3>{{ $t("settings.setup_title") }}</h3>
+              <template v-if="setupModeState === 'pending'">
+                <cv-radio-group vertical>
+                  <cv-radio-button
+                    v-model="setupMode"
+                    value="managed"
+                    :label="$t('settings.setup_managed')"
+                    :disabled="
+                      loading.getConfiguration || loading.configureModule
+                    "
+                    ref="setup_mode"
+                  />
+                  <p class="setup-help">
+                    {{ $t("settings.setup_managed_help") }}
+                  </p>
+                  <cv-radio-button
+                    v-model="setupMode"
+                    value="manual"
+                    :label="$t('settings.setup_manual')"
+                    :disabled="
+                      loading.getConfiguration || loading.configureModule
+                    "
+                  />
+                  <p class="setup-help">
+                    {{ $t("settings.setup_manual_help") }}
+                  </p>
+                </cv-radio-group>
+                <p v-if="error.setup_mode" class="setup-error">
+                  {{ $t(error.setup_mode) }}
+                </p>
+              </template>
+              <p v-else>{{ $t(`settings.setup_${setupMode}`) }}</p>
+              <p v-if="setupModeState !== 'pending'" class="setup-help">
+                {{ $t("settings.setup_locked") }}
+              </p>
+              <NsInlineNotification
+                v-if="setupMode === 'manual' && setupModeState === 'pending'"
+                kind="warning"
+                :title="$t('settings.manual_warning_title')"
+                :description="$t('settings.manual_warning')"
+                :showCloseButton="false"
+              />
+            </div>
+            <cv-accordion
+              v-if="setupModeState === 'managed'"
+              class="mg-bottom"
+              @change="credentialsAccordionChanged"
+            >
+              <cv-accordion-item>
+                <template slot="title">
+                  {{ $t("settings.credentials_title") }}
+                </template>
+                <template slot="content">
+                  <p class="setup-help">
+                    {{ $t("settings.credentials_help") }}
+                  </p>
+                  <cv-skeleton-text
+                    v-if="loading.getCredentials"
+                    :paragraph="true"
+                    :line-count="2"
+                  />
+                  <NsInlineNotification
+                    v-else-if="error.getCredentials"
+                    kind="error"
+                    :title="$t('action.get-setup-credentials')"
+                    :description="error.getCredentials"
+                    :showCloseButton="false"
+                  />
+                  <template v-else-if="credentialsLoaded">
+                    <label class="bx--label">
+                      {{ $t("settings.admin_username") }}
+                    </label>
+                    <NsCodeSnippet light hideExpandButton>
+                      {{ adminUsername }}
+                    </NsCodeSnippet>
+                    <label class="bx--label">
+                      {{ $t("settings.admin_password") }}
+                    </label>
+                    <NsCodeSnippet light hideExpandButton>
+                      {{ adminPassword }}
+                    </NsCodeSnippet>
+                  </template>
+                </template>
+              </cv-accordion-item>
+            </cv-accordion>
             <cv-row v-if="error.configureModule">
               <cv-column>
                 <NsInlineNotification
@@ -115,11 +201,18 @@ export default {
       },
       urlCheckInterval: null,
       host: "",
+      setupMode: "",
+      setupModeState: "pending",
+      adminUsername: "",
+      adminPassword: "",
+      credentialsLoaded: false,
+      credentialsOpen: false,
       isLetsEncryptEnabled: false,
       isHttpToHttpsEnabled: true,
       loading: {
         getConfiguration: false,
         configureModule: false,
+        getCredentials: false,
       },
       error: {
         getConfiguration: "",
@@ -127,6 +220,8 @@ export default {
         host: "",
         lets_encrypt: "",
         http2https: "",
+        setup_mode: "",
+        getCredentials: "",
       },
     };
   },
@@ -144,7 +239,11 @@ export default {
   },
   beforeRouteLeave(to, from, next) {
     clearInterval(this.urlCheckInterval);
+    this.clearCredentials();
     next();
+  },
+  beforeDestroy() {
+    this.clearCredentials();
   },
   methods: {
     async getConfiguration() {
@@ -192,6 +291,8 @@ export default {
     getConfigurationCompleted(taskContext, taskResult) {
       const config = taskResult.output;
       this.host = config.host;
+      this.setupModeState = config.setup_mode;
+      this.setupMode = config.setup_mode === "pending" ? "" : config.setup_mode;
       this.isLetsEncryptEnabled = config.lets_encrypt;
       this.isHttpToHttpsEnabled = config.http2https;
 
@@ -207,6 +308,13 @@ export default {
 
         if (isValidationOk) {
           this.focusElement("host");
+        }
+        isValidationOk = false;
+      }
+      if (!this.setupMode) {
+        this.error.setup_mode = "common.required";
+        if (isValidationOk) {
+          this.focusElement("setup_mode");
         }
         isValidationOk = false;
       }
@@ -261,6 +369,7 @@ export default {
             host: this.host,
             lets_encrypt: this.isLetsEncryptEnabled,
             http2https: this.isHttpToHttpsEnabled,
+            setup_mode: this.setupMode,
           },
           extra: {
             title: this.$t("settings.instance_configuration", {
@@ -291,6 +400,64 @@ export default {
       // reload configuration
       this.getConfiguration();
     },
+    credentialsAccordionChanged({ changedIndex, state }) {
+      if (changedIndex !== 0) return;
+      if (state[0]) {
+        this.credentialsOpen = true;
+        this.getCredentials();
+      } else {
+        this.clearCredentials();
+      }
+    },
+    clearCredentials() {
+      this.credentialsOpen = false;
+      this.credentialsLoaded = false;
+      this.adminUsername = "";
+      this.adminPassword = "";
+      this.error.getCredentials = "";
+    },
+    async getCredentials() {
+      this.loading.getCredentials = true;
+      this.error.getCredentials = "";
+      const taskAction = "get-setup-credentials";
+      const eventId = this.getUuid();
+      this.core.$root.$once(
+        `${taskAction}-aborted-${eventId}`,
+        () => {
+          if (this.credentialsOpen) {
+            this.error.getCredentials = this.$t("error.generic_error");
+          }
+          this.loading.getCredentials = false;
+        }
+      );
+      this.core.$root.$once(
+        `${taskAction}-completed-${eventId}`,
+        (taskContext, taskResult) => {
+          if (this.credentialsOpen) {
+            this.adminUsername = taskResult.output.username;
+            this.adminPassword = taskResult.output.password;
+            this.credentialsLoaded = true;
+          }
+          this.loading.getCredentials = false;
+        }
+      );
+      const [err] = await to(
+        this.createModuleTaskForApp(this.instanceName, {
+          action: taskAction,
+          extra: {
+            title: this.$t("action." + taskAction),
+            isNotificationHidden: true,
+            eventId,
+          },
+        })
+      );
+      if (err) {
+        if (this.credentialsOpen) {
+          this.error.getCredentials = this.getErrorMessage(err);
+        }
+        this.loading.getCredentials = false;
+      }
+    },
   },
 };
 </script>
@@ -299,5 +466,12 @@ export default {
 @import "../styles/carbon-utils";
 .mg-bottom {
   margin-bottom: $spacing-06;
+}
+.setup-help,
+.setup-error {
+  margin: $spacing-03 0 $spacing-05;
+}
+.setup-error {
+  color: #da1e28;
 }
 </style>

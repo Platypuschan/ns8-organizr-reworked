@@ -10,6 +10,7 @@ import agent
 import agent.tasks
 
 json.load(sys.stdin)
+setup_mode = agent.read_envfile("organizr-setup.env")["ORGANIZR_SETUP_MODE"]
 
 response = agent.tasks.run(
     agent_id=os.environ["AGENT_ID"],
@@ -18,6 +19,7 @@ response = agent.tasks.run(
         "host": os.environ["TRAEFIK_HOST"],
         "http2https": os.environ["TRAEFIK_HTTP2HTTPS"].lower() == "true",
         "lets_encrypt": os.environ["TRAEFIK_LETS_ENCRYPT"].lower() == "true",
+        "setup_mode": setup_mode,
     },
 )
 agent.assert_exp(response["exit_code"] == 0, "The configure-module subtask failed")

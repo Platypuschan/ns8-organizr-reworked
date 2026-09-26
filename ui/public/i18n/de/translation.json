@@ -24,6 +24,18 @@
     "disabled": "Deaktiviert",
         "configuring": "Konfiguration wird angewendet",
     "instance_configuration": "Organizr konfigurieren",
+    "setup_title": "Ersteinrichtung",
+    "setup_managed": "Automatisch mit NS8 einrichten",
+    "setup_managed_help": "NS8 schließt den Organizr-Assistenten mit SQLite ab, erstellt einen lokalen Administrator und erzeugt die benötigten Schlüssel.",
+    "setup_manual": "Organizr-Einrichtungsassistent verwenden",
+    "setup_manual_help": "Installationsdetails und Administrator selbst in Organizr einrichten.",
+    "setup_locked": "Die gewählte Einrichtungsmethode kann nach der ersten Konfiguration nicht geändert werden.",
+    "manual_warning_title": "Assistenten zeitnah abschließen",
+    "manual_warning": "Bis zum Abschluss kann jeder mit Zugriff auf die Seite den ersten Administrator erstellen.",
+    "credentials_title": "Erster Administrator",
+    "credentials_help": "Dies sind die erzeugten Anmeldedaten des lokalen Administrators. Wenn du sein Passwort in Organizr änderst, ist das hier angezeigte Passwort nicht mehr gültig.",
+    "admin_username": "Benutzername",
+    "admin_password": "Passwort",
     "domain_already_used_in_traefik": "Die Domain wird bereits von Traefik verwendet",
         "host_pattern": "Es muss ein gültiger vollständig qualifizierter Domainname sein",
         "host_format": "Es muss ein gültiger vollständig qualifizierter Domainname sein"
@@ -64,6 +76,7 @@
     "get-status": "Status abfragen",
     "configure-module": "Modul konfigurieren",
     "get-configuration": "Konfiguration abrufen",
+    "get-setup-credentials": "Zugangsdaten des ersten Administrators abrufen",
     "get-name": "Name abrufen"
   },
   "task": {

@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+import json
+import os
+import sys
+
+import agent
+
+data = json.load(sys.stdin)
+setup = agent.read_envfile("organizr-setup.env")
+current = setup.get("ORGANIZR_SETUP_MODE", "").strip().lower()
+
+agent.assert_exp(current in {"pending", "manual", "managed"}, "Invalid setup mode in module state.")
+requested = data["setup_mode"]
+agent.assert_exp(requested in {"manual", "managed"}, "Choose manual or managed setup.")
+agent.assert_exp(current in {"pending", requested}, "The setup mode cannot be changed after initial configuration.")
+
+setup["ORGANIZR_SETUP_MODE"] = requested
+agent.write_envfile("organizr-setup.env", setup)
+os.chmod("organizr-setup.env", 0o600)

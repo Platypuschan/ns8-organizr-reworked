@@ -6,11 +6,18 @@ import json
 import os
 import sys
 
+import agent
+
+setup = agent.read_envfile("organizr-setup.env")
+setup_mode = setup.get("ORGANIZR_SETUP_MODE", "")
+agent.assert_exp(setup_mode in {"pending", "manual", "managed"}, "Invalid setup mode in module state.")
+
 json.dump(
     {
         "host": os.getenv("TRAEFIK_HOST", ""),
         "http2https": os.getenv("TRAEFIK_HTTP2HTTPS") == "True",
         "lets_encrypt": os.getenv("TRAEFIK_LETS_ENCRYPT") == "True",
+        "setup_mode": setup_mode,
     },
     fp=sys.stdout,
 )
