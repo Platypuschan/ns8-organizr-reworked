@@ -202,6 +202,7 @@ class AdReconcileTests(unittest.TestCase):
         self.assertEqual(requests[1][2]["authBaseDN"], "DC=example,DC=test")
         self.assertEqual(requests[1][2]["ldapBindPassword"], "private-bind-secret")
         self.assertEqual(requests[1][2]["authBackendHost"], "ldap://10.0.2.2:20000")
+        self.assertEqual(requests[1][2]["authBackendHostSuffix"], "@ad.example.test")
         self.assertEqual(requests[-1][2], {"authType": "both", "authBackend": "ldap"})
 
     def test_bind_failure_does_not_enable_ad_and_disable_restores_local_login(self):

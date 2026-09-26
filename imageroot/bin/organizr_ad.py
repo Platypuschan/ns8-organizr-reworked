@@ -91,7 +91,9 @@ def resolve_ad(settings):
         "authBackendHost": f"ldap://10.0.2.2:{port}",
         "authBaseDN": settings.get("ORGANIZR_AD_USER_SEARCH_BASE", "").strip() or base,
         "authBackendHostPrefix": "",
-        "authBackendHostSuffix": "",
+        # Adldap binds the login name verbatim; AD simple bind needs a UPN
+        # (or a full DN) rather than an unqualified sAMAccountName.
+        "authBackendHostSuffix": f"@{domain_name}",
         "ldapBindUsername": bind_dn,
         "ldapBindPassword": bind_password,
         "ldapType": "1",
