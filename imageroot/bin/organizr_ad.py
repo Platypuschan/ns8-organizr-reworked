@@ -4,6 +4,7 @@
 
 """Keep Organizr's LDAP backend aligned with the selected NS8 AD domain."""
 
+import argparse
 import fcntl
 import ipaddress
 import json
@@ -14,9 +15,19 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+RETRY_INTERVAL = 15
+
 
 class ReconcileError(RuntimeError):
     """An error that can be reported without exposing LDAP credentials."""
+
+
+class TransientError(ReconcileError):
+    """A failure that can pass later; Organizr settings were left unchanged."""
+
+
+class NameCollisionError(ReconcileError):
+    """The reserved local administrator name also exists in AD."""
 
 
 def is_enabled(settings):
@@ -44,7 +55,7 @@ def ensure_recovery_name_free(host, port, base, bind_dn, bind_password, domain_n
                 size_limit=1,
             )
             if connection.entries:
-                raise ReconcileError(
+                raise NameCollisionError(
                     "The name ns8-recovery-admin already exists in AD; "
                     "reserve it for the local Organizr administrator."
                 )
@@ -55,7 +66,8 @@ def ensure_recovery_name_free(host, port, base, bind_dn, bind_password, domain_n
     except ReconcileError:
         raise
     except Exception:
-        raise ReconcileError("Could not verify the reserved administrator name in AD.") from None
+        # The provider may still be starting, e.g. after a node reboot.
+        raise TransientError("Could not verify the reserved administrator name in AD.") from None
 
 
 def resolve_ad(settings):
@@ -137,10 +149,10 @@ def wait_ready(base_url):
         except (OSError, urllib.error.HTTPError):
             pass
         time.sleep(3)
-    raise ReconcileError("Organizr did not become ready for AD configuration.")
+    raise TransientError("Organizr did not become ready for AD configuration.")
 
 
-def reconcile():
+def reconcile_once():
     import agent
 
     setup = agent.read_envfile("organizr-setup.env")
@@ -165,27 +177,56 @@ def reconcile():
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         wait_ready(f"http://127.0.0.1:{port}")
         if is_enabled(settings):
-            # Disable external login before checking for name collisions and
-            # keep local authentication available until LDAP passes its test.
-            request_json(base_url, key, "/config", method="PUT", data={"authType": "internal"})
-            ldap = resolve_ad(settings)
+            # Resolve and check AD before changing Organizr: an unreachable
+            # provider must not turn off an AD login that already works.
+            try:
+                ldap = resolve_ad(settings)
+            except NameCollisionError:
+                request_json(base_url, key, "/config", method="PUT", data={"authType": "internal"})
+                raise
             request_json(base_url, key, "/config", method="PUT", data=ldap)
-            request_json(base_url, key, "/test/ldap", method="POST", data={})
+            try:
+                request_json(base_url, key, "/test/ldap", method="POST", data={})
+            except ReconcileError:
+                # Keep local authentication available until LDAP passes its test.
+                request_json(base_url, key, "/config", method="PUT", data={"authType": "internal"})
+                raise
             request_json(base_url, key, "/config", method="PUT", data={"authType": "both", "authBackend": "ldap"})
         else:
             request_json(base_url, key, "/config", method="PUT", data={
                 "authType": "internal",
                 "authBackend": "",
                 "authBackendHost": "",
+                "authBackendHostPrefix": "",
+                "authBackendHostSuffix": "",
                 "authBaseDN": "",
                 "ldapBindUsername": "",
                 "ldapBindPassword": "",
             })
 
 
-def main():
+def reconcile(retry_seconds=0):
+    """Reconcile once, retrying transient failures until the deadline."""
+    deadline = time.monotonic() + retry_seconds
+    while True:
+        try:
+            return reconcile_once()
+        except TransientError as error:
+            if time.monotonic() >= deadline:
+                raise
+            print(f"Organizr AD configuration will be retried: {error}", file=sys.stderr)
+            time.sleep(RETRY_INTERVAL)
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--retry", type=int, default=0, metavar="SECONDS",
+        help="keep retrying transient AD or Organizr failures for this many seconds",
+    )
+    args = parser.parse_args(argv)
     try:
-        reconcile()
+        reconcile(args.retry)
     except (ReconcileError, FileNotFoundError, KeyError) as error:
         # Never print an upstream response or the bind credentials.
         print(f"Organizr AD configuration failed: {error}", file=sys.stderr)

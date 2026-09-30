@@ -127,9 +127,13 @@ agent.assert_exp(result.get("response", {}).get("result") == "success",
 
 # Retain the key separately from the temporary wizard state for AD
 # reconciliation after restarts and NS8 account-domain changes.
-bootstrap = agent.read_envfile("organizr-bootstrap.env")
-agent.assert_exp(len(bootstrap["ORGANIZR_API_KEY"]) == 20,
-                 "The stored Organizr API key must be 20 characters long.")
+try:
+    bootstrap = agent.read_envfile("organizr-bootstrap.env")
+except FileNotFoundError:
+    bootstrap = {}
+agent.assert_exp(len(bootstrap.get("ORGANIZR_API_KEY", "")) == 20,
+                 "The API key of the interrupted Organizr setup is missing or invalid; "
+                 "restore the instance from a backup or reinstall it.")
 agent.write_envfile("organizr-api.env", {"ORGANIZR_API_KEY": bootstrap["ORGANIZR_API_KEY"]})
 os.chmod("organizr-api.env", 0o600)
 setup["ORGANIZR_SETUP_COMPLETE"] = "true"

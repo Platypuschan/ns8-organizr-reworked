@@ -15,8 +15,8 @@ response = agent.tasks.run(
     action="configure-module",
     data={
         "host": os.environ["TRAEFIK_HOST"],
-        "http2https": os.environ["TRAEFIK_HTTP2HTTPS"] == "True",
-        "lets_encrypt": os.environ["TRAEFIK_LETS_ENCRYPT"] == "True",
+        "http2https": os.environ["TRAEFIK_HTTP2HTTPS"].lower() == "true",
+        "lets_encrypt": os.environ["TRAEFIK_LETS_ENCRYPT"].lower() == "true",
         "setup_mode": setup_mode,
         "ad_enabled": ad.get("ORGANIZR_AD_ENABLED") == "true",
         "ad_domain": ad.get("ORGANIZR_AD_DOMAIN", ""),

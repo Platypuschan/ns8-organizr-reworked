@@ -104,3 +104,6 @@ dist
 .tern-port
 
 tests/outputs/
+
+# Python bytecode
+__pycache__/

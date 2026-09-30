@@ -4,6 +4,8 @@ Library    String
 
 *** Variables ***
 ${IMAGE_URL}         ghcr.io/platypuschan/organizr-reworked:latest
+# The update scenario starts from the last published catalog version.
+${PREVIOUS_IMAGE_URL}    ghcr.io/platypuschan/organizr-reworked:0.2.0
 ${SCENARIO}          install
 ${HOST}              organizr.test
 ${MANUAL_HOST}       organizr-manual.test
@@ -11,6 +13,10 @@ ${ADMIN_USER}        admin
 ${ADMIN_PASSWORD}    Nethesis,1234
 ${module_id}         ${EMPTY}
 ${web_port}          ${EMPTY}
+${AD_DOMAIN}         ad.organizr.test
+${AD_USER}           ns8-ci-user
+${AD_PASSWORD}       Nethesis,1234
+${provider}          ${EMPTY}
 
 *** Keywords ***
 Organizr web page is reachable
@@ -33,6 +39,35 @@ Configure module
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    configure-module failed: ${output}
 
+Login succeeds
+    [Arguments]    ${username}    ${password}
+    ${payload} =    Evaluate    json.dumps({"username": $username, "password": $password})    modules=json
+    ${login} =    Execute Command    curl -sS -H 'Content-Type: application/json' --data '${payload}' http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'
+    ${login} =    Strip String    ${login}
+    Should Be Equal    ${login}    success
+
+AD login succeeds
+    Login succeeds    ${AD_USER}    ${AD_PASSWORD}
+
+Recovery login succeeds
+    ${login} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | curl -sS -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'
+    ${login} =    Strip String    ${login}
+    Should Be Equal    ${login}    success
+
+Organizr auth type is
+    [Arguments]    ${expected}
+    ${auth} =    Execute Command    runagent -m ${module_id} sh -c '. ./organizr-api.env; curl -fsS -H "Token: $ORGANIZR_API_KEY" http://127.0.0.1:${web_port}/api/v2/config/authType'
+    ${value} =    Evaluate    json.loads(r'''${auth}''')['response']['data']    modules=json
+    Should Be Equal    ${value}    ${expected}    authType response: ${auth}
+
+AD reconciliation unit state is
+    [Arguments]    ${expected}
+    # Query separately: systemctl show does not keep the argument order.
+    ${active} =    Execute Command    runagent -m ${module_id} systemctl --user show -p ActiveState --value organizr-ad-reconcile.service
+    ${result} =    Execute Command    runagent -m ${module_id} systemctl --user show -p Result --value organizr-ad-reconcile.service
+    ${state} =    Evaluate    $active.strip() + " " + $result.strip()
+    Should Be Equal    ${state}    ${expected}
+
 Login to cluster-admin
     New Page    https://${NODE_ADDR}/cluster-admin/
     Fill Text    text="Username"    ${ADMIN_USER}
@@ -43,7 +78,8 @@ Login to cluster-admin
 
 *** Test Cases ***
 Add and configure module
-    ${output}    ${rc} =    Execute Command    add-module ${IMAGE_URL} 1
+    ${image} =    Set Variable If    r'${SCENARIO}' == 'update'    ${PREVIOUS_IMAGE_URL}    ${IMAGE_URL}
+    ${output}    ${rc} =    Execute Command    add-module ${image} 1
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    add-module failed: ${output}
     &{output} =    Evaluate    ast.literal_eval(r'''${output}''')    modules=ast
@@ -137,38 +173,109 @@ Check public HTTP route
     ...    return_rc=True    return_stdout=False
     Should Be Equal As Integers    ${rc}    0
 
-Check AD login through the NS8 LDAP proxy
+Check AD reconciliation unit
+    # Also verifies that an update from the previous version installs the unit.
+    ${state} =    Execute Command    runagent -m ${module_id} systemctl --user show -p LoadState --value organizr-ad-reconcile.service
+    ${state} =    Strip String    ${state}
+    Should Be Equal    ${state}    loaded
+    Wait Until Keyword Succeeds    300 seconds    5 seconds    AD reconciliation unit state is    inactive success
+
+Enable AD login through the NS8 LDAP proxy
     IF    r'${SCENARIO}' != 'install'
         Skip    A disposable AD domain is provisioned in the install scenario
     END
     ${provider_output}    ${rc} =    Execute Command    api-cli run add-internal-provider --data '{"image":"samba","node":1}'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    Samba provider installation failed: ${provider_output}
-    ${provider} =    Evaluate    json.loads(r'''${provider_output}''')['module_id']    modules=json
+    ${provider_id} =    Evaluate    json.loads(r'''${provider_output}''')['module_id']    modules=json
+    Set Suite Variable    ${provider}    ${provider_id}
     ${defaults}    ${rc} =    Execute Command    api-cli run module/${provider}/get-defaults --data '{"provision":"new-domain"}'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    Samba defaults failed: ${defaults}
     ${ad_ip} =    Evaluate    json.loads(r'''${defaults}''')['ipaddress_list'][0]['ipaddress']    modules=json
-    ${ad_domain} =    Set Variable    ad.organizr.test
-    ${provision}    ${rc} =    Execute Command    api-cli run module/${provider}/configure-module --data '{"provision":"new-domain","realm":"${ad_domain}","nbdomain":"ORGCI","hostname":"dc1","ipaddress":"${ad_ip}","adminuser":"administrator","adminpass":"Nethesis,1234"}'
+    ${provision}    ${rc} =    Execute Command    api-cli run module/${provider}/configure-module --data '{"provision":"new-domain","realm":"${AD_DOMAIN}","nbdomain":"ORGCI","hostname":"dc1","ipaddress":"${ad_ip}","adminuser":"administrator","adminpass":"Nethesis,1234"}'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    Samba provisioning failed: ${provision}
-    ${user_output}    ${rc} =    Execute Command    api-cli run module/${provider}/add-user --data '{"user":"ns8-ci-user","display_name":"NS8 CI User","password":"Nethesis,1234","locked":false,"groups":[],"must_change_password":false}'
+    ${user_output}    ${rc} =    Execute Command    api-cli run module/${provider}/add-user --data '{"user":"${AD_USER}","display_name":"NS8 CI User","password":"${AD_PASSWORD}","locked":false,"groups":[],"must_change_password":false}'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    AD test user creation failed: ${user_output}
-    ${ad_config}    ${rc} =    Execute Command    api-cli run module/${module_id}/configure-module --data '{"host":"${HOST}","http2https":false,"lets_encrypt":false,"setup_mode":"managed","ad_enabled":true,"ad_domain":"${ad_domain}"}'
+    ${ad_config}    ${rc} =    Execute Command    api-cli run module/${module_id}/configure-module --data '{"host":"${HOST}","http2https":false,"lets_encrypt":false,"setup_mode":"managed","ad_enabled":true,"ad_domain":"${AD_DOMAIN}"}'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    Organizr AD setup failed: ${ad_config}
-    ${ad_login} =    Execute Command    curl -sS -H 'Content-Type: application/json' --data '{"username":"ns8-ci-user","password":"Nethesis,1234"}' http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'
-    ${ad_login} =    Strip String    ${ad_login}
-    Should Be Equal    ${ad_login}    success
-    ${recovery_login} =    Execute Command    api-cli run module/${module_id}/get-setup-credentials | curl -sS -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:${web_port}/api/v2/login | jq -r '.response.result'
-    ${recovery_login} =    Strip String    ${recovery_login}
-    Should Be Equal    ${recovery_login}    success
+    AD login succeeds
+    Recovery login succeeds
+    Organizr auth type is    both
+
+AD login survives a restart while the provider is unavailable
+    IF    r'${SCENARIO}' != 'install'
+        Skip    A disposable AD domain is provisioned in the install scenario
+    END
+    # Simulates a node reboot where Samba starts after Organizr.
+    ${rc} =    Execute Command    runagent -m ${provider} systemctl --user stop samba-dc.service
+    ...    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    ${rc} =    Execute Command    runagent -m ${module_id} systemctl --user restart organizr.service
+    ...    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0    organizr.service did not start while the provider was unavailable
+    Wait until Organizr is reachable
+    Wait Until Keyword Succeeds    120 seconds    5 seconds    AD reconciliation unit state is    activating success
+    Organizr auth type is    both
+    ${rc} =    Execute Command    runagent -m ${provider} systemctl --user start samba-dc.service
+    ...    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    Wait Until Keyword Succeeds    600 seconds    10 seconds    AD reconciliation unit state is    inactive success
+    Organizr auth type is    both
+    Wait Until Keyword Succeeds    120 seconds    10 seconds    AD login succeeds
+
+Restore AD-enabled instance from backup
+    IF    r'${SCENARIO}' != 'install'
+        Skip    A disposable AD domain is provisioned in the install scenario
+    END
+    ${endpoint} =    Execute Command    api-cli run list-cluster-backup-endpoints | jq -r '.endpoints[0].url'
+    Should Start With    ${endpoint}    webdav:
+    ${payload} =    Evaluate    json.dumps({"name": "organizr-ci", "provider": "cluster", "url": $endpoint, "password": "", "parameters": {}})    modules=json
+    ${repository}    ${rc} =    Execute Command    api-cli run add-backup-repository --data '${payload}' | jq -r .id
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    backup repository creation failed: ${repository}
+    ${payload} =    Evaluate    json.dumps({"name": "organizr-ci", "repository": $repository, "schedule": "daily", "retention": 1, "instances": [$module_id], "enabled": True})    modules=json
+    ${backup_id}    ${rc} =    Execute Command    api-cli run add-backup --data '${payload}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    backup creation failed: ${backup_id}
+    ${output}    ${rc} =    Execute Command    api-cli run run-backup --data '{"id":${backup_id}}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    backup failed: ${output}
+    ${uuid} =    Execute Command    runagent -m ${module_id} printenv MODULE_UUID
+    ${uuid} =    Strip String    ${uuid}
+    ${rc} =    Execute Command    remove-module --no-preserve ${module_id}
+    ...    return_rc=True    return_stdout=False
+    Should Be Equal As Integers    ${rc}    0
+    # restore-module runs configure-module before organizr.service has started.
+    ${payload} =    Evaluate    json.dumps({"repository": $repository, "path": "organizr-reworked/" + $uuid, "snapshot": "", "node": 1})    modules=json
+    ${output}    ${rc} =    Execute Command    api-cli run restore-module --data '${payload}'
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0    restore failed: ${output}
+    ${restored} =    Evaluate    json.loads(r'''${output}''')['module_id']    modules=json
+    Set Suite Variable    ${module_id}    ${restored}
+    Read allocated web port
+    Wait until Organizr is reachable
+    ${config} =    Execute Command    api-cli run module/${module_id}/get-configuration
+    ${config_object} =    Evaluate    json.loads(r'''${config}''')    modules=json
+    Should Be Equal    ${config_object}[setup_mode]    managed
+    Should Be Equal    ${config_object}[ad_enabled]    ${True}
+    Organizr auth type is    both
+    AD login succeeds
+    Recovery login succeeds
+
+Disable AD login and remove the test domain
+    IF    r'${SCENARIO}' != 'install'
+        Skip    A disposable AD domain is provisioned in the install scenario
+    END
     ${disabled}    ${rc} =    Execute Command    api-cli run module/${module_id}/configure-module --data '{"host":"${HOST}","http2https":false,"lets_encrypt":false,"setup_mode":"managed","ad_enabled":false}'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    Organizr AD disable failed: ${disabled}
-    ${removed}    ${rc} =    Execute Command    api-cli run remove-internal-domain --data '{"domain":"${ad_domain}"}'
+    Organizr auth type is    internal
+    Recovery login succeeds
+    ${removed}    ${rc} =    Execute Command    api-cli run remove-internal-domain --data '{"domain":"${AD_DOMAIN}"}'
     ...    return_rc=True
     Should Be Equal As Integers    ${rc}    0    AD test domain removal failed: ${removed}
 

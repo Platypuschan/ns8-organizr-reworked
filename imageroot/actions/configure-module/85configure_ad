@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -Eeuo pipefail
+exec 1>&2
+
+# Run after 80start_services: restore and clone call configure-module before
+# the service has ever started, and the reconciliation needs Organizr's API.
+reconcile-organizr-ad
