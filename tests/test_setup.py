@@ -137,6 +137,30 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn("ORGANIZR_SETUP_COMPLETE", self.state["organizr-setup.env"])
         self.assertIn("organizr-recovery.env", self.state)
 
+    def test_completed_wizard_without_bootstrap_state_reports_recovery_path(self):
+        self.action("create-module", "10initialize_setup")
+        self.action("configure-module", "10choose_setup", {"setup_mode": "managed"})
+
+        class Response:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+            def read(self, *_):
+                return b'{"response":{"result":"success"}}'
+
+        # config.php exists, but the bootstrap state with the API key is gone.
+        with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
+                patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)), \
+                patch("urllib.request.urlopen", return_value=Response()):
+            with self.assertRaisesRegex(ValueError, "interrupted Organizr setup"):
+                self.action("configure-module", "18managed_setup")
+        self.assertNotIn("ORGANIZR_SETUP_COMPLETE", self.state["organizr-setup.env"])
+
     def test_ad_choice_binds_domain_and_is_preserved_on_host_updates(self):
         self.action("create-module", "10initialize_setup")
         self.action("configure-module", "10choose_setup", {
@@ -185,6 +209,14 @@ class AdReconcileTests(unittest.TestCase):
         self.proxy_patch.start()
         self.addCleanup(self.proxy_patch.stop)
 
+    def reconcile_with(self, request, *, name_check=None, retry_seconds=0):
+        with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
+                patch.object(self.ldap, "wait_ready"), \
+                patch.object(self.ldap, "ensure_recovery_name_free", side_effect=name_check), \
+                patch.object(self.ldap, "request_json", side_effect=request), \
+                patch.object(self.ldap, "RETRY_INTERVAL", 0):
+            self.ldap.reconcile(retry_seconds)
+
     def test_ad_login_enabled_only_after_organizr_ldap_test(self):
         requests = []
 
@@ -192,20 +224,16 @@ class AdReconcileTests(unittest.TestCase):
             requests.append((path, method, data))
             return {"response": {"result": "success"}}
 
-        with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
-                patch.object(self.ldap, "wait_ready"), \
-                patch.object(self.ldap, "ensure_recovery_name_free"), \
-                patch.object(self.ldap, "request_json", side_effect=request):
-            self.ldap.reconcile()
-        self.assertEqual([call[0] for call in requests], ["/config", "/config", "/test/ldap", "/config"])
-        self.assertEqual(requests[0][2]["authType"], "internal")
-        self.assertEqual(requests[1][2]["authBaseDN"], "DC=example,DC=test")
-        self.assertEqual(requests[1][2]["ldapBindPassword"], "private-bind-secret")
-        self.assertEqual(requests[1][2]["authBackendHost"], "ldap://10.0.2.2:20000")
-        self.assertEqual(requests[1][2]["authBackendHostSuffix"], "@ad.example.test")
+        self.reconcile_with(request)
+        self.assertEqual([call[0] for call in requests], ["/config", "/test/ldap", "/config"])
+        self.assertEqual(requests[0][2]["authBaseDN"], "DC=example,DC=test")
+        self.assertEqual(requests[0][2]["ldapBindPassword"], "private-bind-secret")
+        self.assertEqual(requests[0][2]["authBackendHost"], "ldap://10.0.2.2:20000")
+        self.assertEqual(requests[0][2]["authBackendHostSuffix"], "@ad.example.test")
+        self.assertNotIn("authType", requests[0][2])
         self.assertEqual(requests[-1][2], {"authType": "both", "authBackend": "ldap"})
 
-    def test_bind_failure_does_not_enable_ad_and_disable_restores_local_login(self):
+    def test_ldap_test_failure_leaves_only_local_login_and_disable_clears_ldap(self):
         requests = []
 
         def request(_, __, path, *, method="GET", data=None):
@@ -213,28 +241,70 @@ class AdReconcileTests(unittest.TestCase):
             if path == "/test/ldap":
                 raise self.ldap.ReconcileError("LDAP test failed")
 
-        with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
-                patch.object(self.ldap, "wait_ready"), \
-                patch.object(self.ldap, "ensure_recovery_name_free"), \
-                patch.object(self.ldap, "request_json", side_effect=request):
-            with self.assertRaisesRegex(self.ldap.ReconcileError, "LDAP test failed"):
-                self.ldap.reconcile()
-            self.assertEqual([c[0] for c in requests], ["/config", "/config", "/test/ldap"])
-            self.state["organizr-ad.env"]["ORGANIZR_AD_ENABLED"] = "false"
-            requests.clear()
-            self.ldap.reconcile()
-            self.assertEqual(requests[0][1]["authType"], "internal")
-            self.assertEqual(requests[0][1]["authBackend"], "")
+        with self.assertRaisesRegex(self.ldap.ReconcileError, "LDAP test failed"):
+            self.reconcile_with(request)
+        self.assertEqual([c[0] for c in requests], ["/config", "/test/ldap", "/config"])
+        self.assertEqual(requests[-1][1], {"authType": "internal"})
+        self.state["organizr-ad.env"]["ORGANIZR_AD_ENABLED"] = "false"
+        requests.clear()
+        self.reconcile_with(request)
+        self.assertEqual(requests[0][1]["authType"], "internal")
+        self.assertEqual(requests[0][1]["authBackend"], "")
+        self.assertEqual(requests[0][1]["authBackendHostSuffix"], "")
 
     def test_reserved_name_collision_leaves_only_local_login(self):
         requests = []
-        with patch.dict(os.environ, {"TCP_PORT": "20230"}), \
-                patch.object(self.ldap, "wait_ready"), \
-                patch.object(self.ldap, "request_json", side_effect=lambda _, __, path, *, method, data: requests.append(data)), \
-                patch.object(self.ldap, "ensure_recovery_name_free", side_effect=self.ldap.ReconcileError("name in AD")):
-            with self.assertRaisesRegex(self.ldap.ReconcileError, "name in AD"):
-                self.ldap.reconcile()
+        with self.assertRaisesRegex(self.ldap.ReconcileError, "name in AD"):
+            self.reconcile_with(
+                lambda _, __, path, *, method, data: requests.append(data),
+                name_check=self.ldap.NameCollisionError("name in AD"),
+            )
         self.assertEqual(requests, [{"authType": "internal"}])
+
+    def test_unreachable_provider_keeps_current_organizr_login(self):
+        # After a reboot, Samba can start after Organizr: a working AD login
+        # must not be switched off because the provider is not reachable yet.
+        requests = []
+        with self.assertRaises(self.ldap.TransientError):
+            self.reconcile_with(
+                lambda _, __, path, *, method, data: requests.append(data),
+                name_check=self.ldap.TransientError("provider unavailable"),
+            )
+        self.assertEqual(requests, [])
+
+    def test_retry_waits_for_provider_then_enables_ad(self):
+        requests = []
+        checks = [self.ldap.TransientError("provider unavailable"), None]
+
+        def name_check(*_):
+            error = checks.pop(0)
+            if error:
+                raise error
+
+        self.reconcile_with(
+            lambda _, __, path, *, method, data: requests.append(path),
+            name_check=name_check, retry_seconds=60,
+        )
+        self.assertEqual(checks, [])
+        self.assertEqual(requests, ["/config", "/test/ldap", "/config"])
+
+    def test_retry_does_not_repeat_permanent_errors(self):
+        checks = []
+
+        def name_check(*_):
+            checks.append(1)
+            raise self.ldap.NameCollisionError("name in AD")
+
+        with self.assertRaises(self.ldap.NameCollisionError):
+            self.reconcile_with(lambda *_, **__: None, name_check=name_check, retry_seconds=60)
+        self.assertEqual(len(checks), 1)
+
+    def test_main_reports_errors_without_traceback(self):
+        with patch.object(self.ldap, "reconcile", side_effect=self.ldap.TransientError("later")) as reconcile, \
+                patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(self.ldap.main(["--retry", "600"]), 1)
+        reconcile.assert_called_once_with(600)
+        self.assertIn("Organizr AD configuration failed: later", stderr.getvalue())
 
     def test_ad_lookup_rejects_reserved_ad_account(self):
         fake = types.ModuleType("ldap3")
@@ -271,6 +341,25 @@ class AdReconcileTests(unittest.TestCase):
         self.assertIn("(sAMAccountName=ns8-recovery-admin)", searches[0])
         self.assertIn("(userPrincipalName=ns8-recovery-admin@ad.example.test)", searches[0])
 
+    def test_ad_lookup_connection_failure_is_transient(self):
+        fake = types.ModuleType("ldap3")
+        fake.NONE = fake.SUBTREE = object()
+        fake.Server = lambda *args, **kwargs: object()
+
+        def refuse(*args, **kwargs):
+            raise OSError("connection refused")
+
+        fake.Connection = refuse
+        fake_conv = types.ModuleType("ldap3.utils.conv")
+        fake_conv.escape_filter_chars = lambda value: value
+        with patch.dict(sys.modules, {"ldap3": fake, "ldap3.utils": types.ModuleType("ldap3.utils"),
+                                      "ldap3.utils.conv": fake_conv}):
+            with self.assertRaises(self.ldap.TransientError):
+                self.ldap.ensure_recovery_name_free(
+                    "127.0.0.1", 20000, "DC=example,DC=test",
+                    "CN=Bind,DC=example,DC=test", "private-bind-secret", "ad.example.test",
+                )
+
     def test_refuses_untrusted_proxy_host(self):
         proxy = sys.modules["agent.ldapproxy"]
         proxy.Ldapproxy = lambda: types.SimpleNamespace(get_domain=lambda _: {
@@ -278,6 +367,52 @@ class AdReconcileTests(unittest.TestCase):
         })
         with self.assertRaisesRegex(self.ldap.ReconcileError, "loopback"):
             self.ldap.resolve_ad(self.state["organizr-ad.env"])
+
+
+class LifecycleWiringTests(unittest.TestCase):
+    def test_ad_reconciliation_runs_after_service_start(self):
+        # Restore and clone run configure-module before the service starts.
+        steps = sorted(path.name for path in (ACTIONS / "configure-module").iterdir()
+                       if path.name[:2].isdigit())
+        self.assertLess(steps.index("80start_services"), steps.index("85configure_ad"))
+
+    def test_service_start_does_not_wait_for_ad_reconciliation(self):
+        units = ROOT / "imageroot" / "systemd" / "user"
+        service = (units / "organizr.service").read_text()
+        self.assertIn("ExecStartPost=-/usr/bin/systemctl --user start --no-block "
+                      "organizr-ad-reconcile.service", service)
+        self.assertNotIn("reconcile-organizr-ad", service)
+        reconcile = (units / "organizr-ad-reconcile.service").read_text()
+        self.assertIn("Type=oneshot", reconcile)
+        self.assertIn("PartOf=organizr.service", reconcile)
+        retry = int(reconcile.split("--retry ", 1)[1].split()[0])
+        timeout = int(reconcile.split("TimeoutStartSec=", 1)[1].split("min")[0]) * 60
+        self.assertGreater(timeout, retry + 180)
+
+
+class ConfigurationTests(unittest.TestCase):
+    def setUp(self):
+        SetupTests.setUp(self)
+        self.state.update({
+            "organizr-setup.env": {"ORGANIZR_SETUP_MODE": "pending"},
+            "organizr-ad.env": {"ORGANIZR_AD_ENABLED": "false"},
+        })
+
+    def read_configuration(self, environment):
+        stdout = io.StringIO()
+        with patch.dict(os.environ, environment, clear=True), patch("sys.stdout", stdout):
+            runpy.run_path(str(ACTIONS / "get-configuration" / "20read"), run_name="__main__")
+        return json.loads(stdout.getvalue())
+
+    def test_new_instance_suggests_https_redirect(self):
+        config = self.read_configuration({})
+        self.assertTrue(config["http2https"])
+        self.assertFalse(config["lets_encrypt"])
+
+    def test_stored_booleans_are_parsed_case_insensitively(self):
+        config = self.read_configuration({"TRAEFIK_HTTP2HTTPS": "False", "TRAEFIK_LETS_ENCRYPT": "true"})
+        self.assertFalse(config["http2https"])
+        self.assertTrue(config["lets_encrypt"])
 
 
 if __name__ == "__main__":

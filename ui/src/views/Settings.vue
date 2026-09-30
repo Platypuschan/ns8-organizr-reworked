@@ -389,8 +389,8 @@ export default {
 
       for (const validationError of validationErrors) {
         const param = validationError.parameter;
-        // set i18n error message
-        this.error[param] = this.$t("settings." + validationError.error);
+        // store the i18n key; the template translates it
+        this.error[param] = "settings." + validationError.error;
 
         if (!focusAlreadySet) {
           this.focusElement(param);
