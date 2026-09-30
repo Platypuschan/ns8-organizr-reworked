@@ -16,8 +16,9 @@ ad = agent.read_envfile("organizr-ad.env")
 json.dump(
     {
         "host": os.getenv("TRAEFIK_HOST", ""),
-        "http2https": os.getenv("TRAEFIK_HTTP2HTTPS") == "True",
-        "lets_encrypt": os.getenv("TRAEFIK_LETS_ENCRYPT") == "True",
+        # Before the first configuration, suggest the HTTPS redirect.
+        "http2https": os.getenv("TRAEFIK_HTTP2HTTPS", "true").lower() == "true",
+        "lets_encrypt": os.getenv("TRAEFIK_LETS_ENCRYPT", "").lower() == "true",
         "setup_mode": setup_mode,
         "ad_enabled": ad.get("ORGANIZR_AD_ENABLED") == "true",
         "ad_domain": ad.get("ORGANIZR_AD_DOMAIN", ""),

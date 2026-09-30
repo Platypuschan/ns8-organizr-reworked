@@ -1,0 +1,17 @@
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+
+[Unit]
+Description=Organizr AD login reconciliation
+After=organizr.service
+PartOf=organizr.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%E/state
+# After a node reboot the account provider can start later than Organizr.
+# Retry transient failures for 10 minutes without disabling a working AD login.
+ExecStart=runagent reconcile-organizr-ad --retry 600
+TimeoutStartSec=15min
+SyslogIdentifier=%u

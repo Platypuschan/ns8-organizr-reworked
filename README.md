@@ -84,6 +84,17 @@ Keep the username `ns8-recovery-admin` unused in AD. The module checks for
 an existing AD account with that name before enabling LDAP so that it cannot
 inherit the local administrator's Organizr permissions.
 
+After every service start, `organizr-ad-reconcile.service` refreshes the LDAP
+bind settings in the background. If the account provider is not reachable yet,
+for example because Samba starts after Organizr during a node reboot, it keeps
+the current Organizr login settings and retries for up to 10 minutes. It
+switches Organizr to local login only if the reserved name exists in AD or the
+LDAP test fails. Check its progress with:
+
+~~~bash
+runagent -m organizr-reworked1 journalctl --user -u organizr-ad-reconcile.service
+~~~
+
 Choose `manual` to use the ordinary Organizr first-run wizard. Open the public
 URL promptly after configuration: until the wizard is completed, anyone with
 network access can create the first administrator. To select this mode via the
@@ -160,9 +171,13 @@ remove-module --no-preserve organizr-reworked1
 
 Static checks and the UI build run for every push and pull request. The module
 also includes Robot Framework install and update scenarios for the reusable
-NS8 QEMU test workflow. The install scenario provisions a disposable Samba AD
-domain, signs in to Organizr with an AD user, checks the recovery administrator,
-then removes the test domain.
+NS8 QEMU test workflow. The update scenario installs the last published catalog
+version (`PREVIOUS_IMAGE_URL` in `tests/organizr.robot`) and updates it to the
+tested image. The install scenario provisions a disposable Samba AD domain,
+signs in to Organizr with an AD user and the recovery administrator, restarts
+Organizr while Samba is stopped, backs the instance up to the node's local
+backup storage, restores it and repeats the logins, then removes the test
+domain. Raise `PREVIOUS_IMAGE_URL` after publishing a new catalog version.
 
 The Organizr logo bundled in the module UI comes from the GPL-3.0-licensed
 [Organizr repository](https://github.com/causefx/Organizr).

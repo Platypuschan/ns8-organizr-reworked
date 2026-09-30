@@ -28,7 +28,9 @@ ExecStopPost=/usr/bin/podman rm --ignore -f --cidfile %t/organizr.ctr-id
 SyslogIdentifier=%u
 PIDFile=%t/organizr.pid
 Type=forking
-ExecStartPost=-runagent reconcile-organizr-ad
+# Reconcile AD login in a separate unit: waiting for Organizr and the account
+# provider must not count against this unit's start timeout.
+ExecStartPost=-/usr/bin/systemctl --user start --no-block organizr-ad-reconcile.service
 
 [Install]
 WantedBy=default.target
