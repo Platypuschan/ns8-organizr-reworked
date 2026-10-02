@@ -7,12 +7,19 @@ set -Eeuo pipefail
 LEADER_NODE="${1:?missing leader node address}"
 IMAGE_URL="${2:?missing module image URL}"
 SCENARIO="${3:?missing test scenario}"
+PREVIOUS_IMAGE_URL="${PREVIOUS_IMAGE_URL:-}"
 SSH_KEYFILE="${SSH_KEYFILE:-${HOME}/.ssh/id_ecdsa}"
 RUNNER_IMAGE="ghcr.io/marketsquare/robotframework-browser/rfbrowser-stable:19.11.0"
 CONTAINER_NAME="rf-organizr-${SCENARIO}"
 
 case "${SCENARIO}" in
-    install|update) ;;
+    install) ;;
+    update)
+        if [[ -z "${PREVIOUS_IMAGE_URL}" ]]; then
+            echo "The update scenario needs PREVIOUS_IMAGE_URL; run test-module-update.sh." >&2
+            exit 64
+        fi
+        ;;
     *)
         echo "Unsupported test scenario '${SCENARIO}'; expected install or update." >&2
         exit 64
@@ -25,7 +32,7 @@ if [[ ! -r "${SSH_KEYFILE}" ]]; then
 fi
 
 SSH_PRIVATE_KEY="$(<"${SSH_KEYFILE}")"
-export IMAGE_URL LEADER_NODE SCENARIO SSH_PRIVATE_KEY
+export IMAGE_URL LEADER_NODE PREVIOUS_IMAGE_URL SCENARIO SSH_PRIVATE_KEY
 
 cleanup() {
     podman rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -40,6 +47,7 @@ podman run --interactive \
     --replace \
     --volume "${PWD}:/home/pwuser/ns8-module:z" \
     --env IMAGE_URL \
+    --env PREVIOUS_IMAGE_URL \
     --env LEADER_NODE \
     --env SCENARIO \
     --env SSH_PRIVATE_KEY \
@@ -55,6 +63,7 @@ cd /home/pwuser/ns8-module
 exec robot \
     -v "NODE_ADDR:${LEADER_NODE}" \
     -v "IMAGE_URL:${IMAGE_URL}" \
+    -v "PREVIOUS_IMAGE_URL:${PREVIOUS_IMAGE_URL}" \
     -v "SSH_KEYFILE:/home/pwuser/ns8-key" \
     -v "SCENARIO:${SCENARIO}" \
     --name "organizr-${SCENARIO}" \
