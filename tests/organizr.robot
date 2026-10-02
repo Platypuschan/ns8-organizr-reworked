@@ -4,8 +4,9 @@ Library    String
 
 *** Variables ***
 ${IMAGE_URL}         ghcr.io/platypuschan/organizr-reworked:latest
-# The update scenario starts from the last published catalog version.
-${PREVIOUS_IMAGE_URL}    ghcr.io/platypuschan/organizr-reworked:0.2.0
+# The update scenario starts from the last published catalog version;
+# test-module-update.sh looks it up in the registry.
+${PREVIOUS_IMAGE_URL}    ${EMPTY}
 ${SCENARIO}          install
 ${HOST}              organizr.test
 ${MANUAL_HOST}       organizr-manual.test

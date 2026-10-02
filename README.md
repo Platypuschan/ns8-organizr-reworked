@@ -172,12 +172,18 @@ remove-module --no-preserve organizr-reworked1
 Static checks and the UI build run for every push and pull request. The module
 also includes Robot Framework install and update scenarios for the reusable
 NS8 QEMU test workflow. The update scenario installs the last published catalog
-version (`PREVIOUS_IMAGE_URL` in `tests/organizr.robot`) and updates it to the
-tested image. The install scenario provisions a disposable Samba AD domain,
+version and updates it to the tested image. `test-module-update.sh` looks that
+version up in GHCR (`.github/scripts/previous-release`): the newest stable tag
+that is not newer than `CATALOG_VERSION`. The install scenario provisions a disposable Samba AD domain,
 signs in to Organizr with an AD user and the recovery administrator, restarts
 Organizr while Samba is stopped, backs the instance up to the node's local
 backup storage, restores it and repeats the logins, then removes the test
-domain. Raise `PREVIOUS_IMAGE_URL` after publishing a new catalog version.
+domain.
+
+Every change to `imageroot/`, `ui/` or `build-images.sh` needs a higher
+`CATALOG_VERSION`. Validate fails otherwise
+(`.github/scripts/check-catalog-version`), and so does the catalog promotion,
+because an existing version tag is never overwritten.
 
 The Organizr logo bundled in the module UI comes from the GPL-3.0-licensed
 [Organizr repository](https://github.com/causefx/Organizr).
