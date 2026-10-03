@@ -44,6 +44,10 @@ class ReleaseCheckTest(unittest.TestCase):
         self.git("init", "--quiet", "--initial-branch=main")
         self.git("config", "user.email", "test@example.test")
         self.git("config", "user.name", "Test")
+        # Background auto-maintenance can still write to .git while tearDown
+        # removes the directory ("Directory not empty: '.git'").
+        self.git("config", "maintenance.auto", "false")
+        self.git("config", "gc.auto", "0")
         self.write("CATALOG_VERSION", "0.1.0\n")
         self.write("imageroot/actions/example", "one\n")
         self.write("README.md", "docs\n")
