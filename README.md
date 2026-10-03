@@ -6,7 +6,7 @@ bookmarks, with optional user accounts and per-tab access controls.
 
 The module provides:
 
-- the official `ghcr.io/organizr/organizr` container
+- an Organizr runtime container (nginx, PHP 8.3, cron) built in this repository
 - HTTPS access through the NS8 Traefik instance
 - persistent Organizr configuration and application data
 - integration with the NS8 backup, clone, restore, status and log views
@@ -17,12 +17,29 @@ The module provides:
 ## Runtime design
 
 The module deliberately uses the stable Organizr branch (`v2-master`). The
-official container manifest is pinned by digest for reproducible installs and
-is kept current by Renovate. The container stores its complete working tree
-and configuration below `/config`, which is backed by the Podman volume
-`organizr-app`.
+container stores its complete working tree and configuration below `/config`,
+which is backed by the Podman volume `organizr-app`.
 
-The upstream container does not embed the Organizr PHP application. On start,
+Upstream stopped rebuilding the official `ghcr.io/organizr/organizr` image in
+December 2023 (Alpine 3.18, end of life). The module therefore ships its own
+runtime image, `ghcr.io/platypuschan/organizr-runtime`, built from
+[`runtime/`](runtime). It keeps the upstream startup scripts from
+[docker-base](https://github.com/organizr/docker-base) and
+[docker-organizr](https://github.com/organizr/docker-organizr), so paths,
+ports, environment and the `/config` layout stay the same, but it runs on a
+current Alpine release with PHP 8.3 and s6-overlay 3. Existing `/config`
+volumes from the official image keep working.
+
+The runtime tag is the Git tree hash of `runtime/`. CI builds and pushes a tag
+once and never overwrites it, so every module release references exactly the
+runtime it was tested with. Renovate updates the pinned Alpine base image in
+`runtime/Containerfile`; that change creates a new runtime tag and needs a new
+`CATALOG_VERSION`.
+
+The rTorrent homepage widget needs the PHP `xmlrpc` extension, which current
+Alpine releases no longer package, so that widget is not supported.
+
+The runtime image does not embed the Organizr PHP application either. On start,
 it clones or updates the selected Organizr branch inside `/config`. Therefore a
 container restart can also update Organizr even when the NS8 module image has
 not changed. Create an NS8 application backup before planned restarts or
@@ -38,7 +55,7 @@ To install from the command line, use a released version number from
 [`CATALOG_VERSION`](CATALOG_VERSION) or the catalog, for example:
 
 ~~~bash
-add-module ghcr.io/platypuschan/organizr-reworked:0.2.2 1
+add-module ghcr.io/platypuschan/organizr-reworked:0.3.0 1
 ~~~
 
 The command returns the instance ID, for example `organizr-reworked1`.
@@ -146,7 +163,7 @@ Software Center or from the command line with the new version number:
 
 ~~~bash
 api-cli run update-module --data '{
-  "module_url": "ghcr.io/platypuschan/organizr-reworked:0.2.2",
+  "module_url": "ghcr.io/platypuschan/organizr-reworked:0.3.0",
   "instances": ["organizr-reworked1"]
 }'
 ~~~
@@ -157,8 +174,8 @@ version; afterwards the Software Center offers new catalog versions again.
 `force` is only needed for moving development tags such as `:latest`, because
 it makes NS8 pull the image again even if the tag is already present locally.
 
-The update restarts the Organizr container. Because of the upstream image
-behavior described above, that restart also checks out the current stable
+The update restarts the Organizr container. Because of the runtime behavior
+described above, that restart also checks out the current stable
 Organizr code.
 
 ## Troubleshooting
@@ -172,8 +189,8 @@ runagent -m organizr-reworked1 podman logs organizr
 runagent -m organizr-reworked1 podman exec -it organizr /bin/bash
 ~~~
 
-The first start can take longer because the official container downloads the
-Organizr source into the persistent volume.
+The first start can take longer because the container downloads the Organizr
+source into the persistent volume.
 
 ## Uninstall
 
@@ -196,7 +213,7 @@ recovery administrator, restarts Organizr while Samba is stopped, backs the
 instance up to the node's local backup storage, restores it and repeats the
 logins, then removes the test domain.
 
-Every change to `imageroot/`, `ui/` or `build-images.sh` needs a higher
+Every change to `imageroot/`, `ui/`, `runtime/` or `build-images.sh` needs a higher
 `CATALOG_VERSION`. Validate fails otherwise
 (`.github/scripts/check-catalog-version`), and so does the catalog promotion,
 because an existing version tag is never overwritten.

@@ -106,7 +106,7 @@ jobs:
           set -Eeuo pipefail
           grep -Fq 'org.nethserver.tcp-ports-demand=1' build-images.sh
           grep -Fq 'org.nethserver.rootfull=0' build-images.sh
-          grep -Fq '${ORGANIZR_IMAGE}' imageroot/systemd/user/organizr.service
+          grep -Fq '${ORGANIZR_RUNTIME_IMAGE}' imageroot/systemd/user/organizr.service
           grep -Fq 'volumes/organizr-app' imageroot/etc/state-include.conf
 
   ui:
