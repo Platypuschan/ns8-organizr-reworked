@@ -30,13 +30,23 @@ updates and review the [Organizr releases](https://github.com/causefx/Organizr/r
 
 ## Install
 
-Install the module on an NS8 node:
+Add the [Platypuschan NS8 module catalog](https://github.com/Platypuschan/ns8-modules#add-the-repository)
+as a software repository and install **Organizr Reworked** from the NS8 Software
+Center.
+
+To install from the command line, use a released version number from
+[`CATALOG_VERSION`](CATALOG_VERSION) or the catalog, for example:
 
 ~~~bash
-add-module ghcr.io/platypuschan/organizr-reworked:latest 1
+add-module ghcr.io/platypuschan/organizr-reworked:0.2.1 1
 ~~~
 
 The command returns the instance ID, for example `organizr-reworked1`.
+
+Do not install production instances from `:latest` or a branch tag. NS8 takes
+the displayed module version from the image tag and offers updates only to
+instances with a SemVer version such as `0.2.1`; an instance installed from
+`:latest` never receives update notifications.
 
 ## Configure
 
@@ -131,15 +141,21 @@ runagent -m organizr-reworked1 systemctl --user start organizr.service
 
 ## Update
 
-After creating and verifying a backup, update the module with:
+After creating and verifying a backup, update the instance from the NS8
+Software Center or from the command line with the new version number:
 
 ~~~bash
 api-cli run update-module --data '{
-  "module_url": "ghcr.io/platypuschan/organizr-reworked:latest",
-  "instances": ["organizr-reworked1"],
-  "force": true
+  "module_url": "ghcr.io/platypuschan/organizr-reworked:0.2.1",
+  "instances": ["organizr-reworked1"]
 }'
 ~~~
+
+An instance that shows the version `latest` was installed or updated from the
+moving `:latest` tag. Update it once with the command above to a released
+version; afterwards the Software Center offers new catalog versions again.
+`force` is only needed for moving development tags such as `:latest`, because
+it makes NS8 pull the image again even if the tag is already present locally.
 
 The update restarts the Organizr container. Because of the upstream image
 behavior described above, that restart also checks out the current stable
@@ -170,15 +186,15 @@ remove-module --no-preserve organizr-reworked1
 ## Testing
 
 Static checks and the UI build run for every push and pull request. The module
-also includes Robot Framework install and update scenarios for the reusable
-NS8 QEMU test workflow. The update scenario installs the last published catalog
+also includes Robot Framework install and update scenarios for the reusable NS8
+QEMU test workflow. The update scenario installs the last published catalog
 version and updates it to the tested image. `test-module-update.sh` looks that
 version up in GHCR (`.github/scripts/previous-release`): the newest stable tag
-that is not newer than `CATALOG_VERSION`. The install scenario provisions a disposable Samba AD domain,
-signs in to Organizr with an AD user and the recovery administrator, restarts
-Organizr while Samba is stopped, backs the instance up to the node's local
-backup storage, restores it and repeats the logins, then removes the test
-domain.
+that is not newer than `CATALOG_VERSION`. The install scenario provisions a
+disposable Samba AD domain, signs in to Organizr with an AD user and the
+recovery administrator, restarts Organizr while Samba is stopped, backs the
+instance up to the node's local backup storage, restores it and repeats the
+logins, then removes the test domain.
 
 Every change to `imageroot/`, `ui/` or `build-images.sh` needs a higher
 `CATALOG_VERSION`. Validate fails otherwise
