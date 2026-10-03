@@ -55,7 +55,7 @@ To install from the command line, use a released version number from
 [`CATALOG_VERSION`](CATALOG_VERSION) or the catalog, for example:
 
 ~~~bash
-add-module ghcr.io/platypuschan/organizr-reworked:0.3.0 1
+add-module ghcr.io/platypuschan/organizr-reworked:0.3.1 1
 ~~~
 
 The command returns the instance ID, for example `organizr-reworked1`.
@@ -163,7 +163,7 @@ Software Center or from the command line with the new version number:
 
 ~~~bash
 api-cli run update-module --data '{
-  "module_url": "ghcr.io/platypuschan/organizr-reworked:0.3.0",
+  "module_url": "ghcr.io/platypuschan/organizr-reworked:0.3.1",
   "instances": ["organizr-reworked1"]
 }'
 ~~~
