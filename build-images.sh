@@ -9,11 +9,18 @@ repobase="${REPOBASE:-ghcr.io/platypuschan}"
 reponame="organizr-reworked"
 repository_source="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-Platypuschan/ns8-organizr-reworked}"
 
-# Organizr publishes one multi-architecture rolling tag, so pin the image
-# manifest for reproducible NS8 installs. Renovate updates this digest.
-# The application itself is refreshed from the selected branch at startup.
-organizr_image="ghcr.io/organizr/organizr:latest@sha256:1ce319d73cdfd2666ec7ef21e15907531fabc8a6f333c4ac61e2b2e9d2d162f5"
+# The Organizr runtime (nginx, PHP-FPM, cron) is built from runtime/ because
+# upstream no longer rebuilds ghcr.io/organizr/organizr. Its tag is derived
+# from the content of runtime/; in CI the "runtime" job of publish-images.yml
+# pushes it before this script runs. The application itself is refreshed from
+# the selected branch at startup.
+organizr_image="$(.github/scripts/runtime-image)"
 node_image="docker.io/library/node:24.20.0-slim"
+
+if [[ -z "${CI:-}" ]] && ! buildah inspect --type image "${organizr_image}" >/dev/null 2>&1; then
+    echo "Building the Organizr runtime image ${organizr_image}..."
+    buildah bud --layers -t "${organizr_image}" runtime
+fi
 
 container="$(buildah from scratch)"
 nodebuilder=""

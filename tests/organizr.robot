@@ -169,6 +169,14 @@ Check persistent volume across restart or update
     ${marker} =    Strip String    ${marker}
     Should Be Equal    ${marker}    ns8-persist
 
+Check own runtime image
+    # Runs after the update step, so the update scenario checks the new image.
+    ${image} =    Execute Command    runagent -m ${module_id} podman inspect organizr --format '{{.ImageName}}'
+    Should Contain    ${image}    /organizr-runtime:
+    ${php} =    Execute Command    runagent -m ${module_id} podman exec organizr php -r 'echo PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION;'
+    ${php} =    Strip String    ${php}
+    Should Be Equal    ${php}    8.3
+
 Check public HTTP route
     ${rc} =    Execute Command    curl -fsS --max-time 15 --resolve ${HOST}:80:127.0.0.1 -o /dev/null http://${HOST}/
     ...    return_rc=True    return_stdout=False

@@ -1,0 +1,98 @@
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+
+if [ "$branch" == "v2-develop" ] || [ "$branch" == "develop" ] || [ "$branch" == "dev" ]; then
+  echo "v2-develop" >/Docker.txt
+elif [ "$branch" == "v2-master" ] || [ "$branch" == "master" ]; then
+  echo "v2-master" >/Docker.txt
+elif [ "$branch" == "manual" ]; then
+  echo "Autoupdater disabled (not recomended)"
+  echo "v2-master" >/Docker.txt
+else
+  echo "$branch is not a valid branch, exiting"
+  exit 1
+fi
+
+if [[ -d /config/www/Dashboard ]]; then
+  echo '-----------------------'
+  echo '| Relocating Organizr |'
+  echo '-----------------------'
+  if [[ $(grep -c "root /config/www/Dashboard;" /config/nginx/site-confs/default) -eq 1 ]]; then
+    sed -i $'s|root /config/www/Dashboard;|root /config/www/organizr;|g' /config/nginx/site-confs/default
+    sed -i $'s|# V0.0.2|# V0.0.3|g' /config/nginx/site-confs/default
+  elif [[ $(grep -c "root /config/www/organizr;" /config/nginx/site-confs/default) -eq 0 ]]; then
+    echo "Root directive was not detected, unable to update nginx with the new location"
+  fi
+  mv /config/www/Dashboard /config/www/organizr
+fi
+
+if [[ $(grep -c "location /api/v2 {" /config/nginx/site-confs/default) -eq 0 ]] &&
+  [[ $(grep -c "# V0.0.2" /config/nginx/site-confs/default) -eq 1 || $(grep -c "# V0.0.3" /config/nginx/site-confs/default) -eq 1 ]]; then
+  sed -i $'s|location ~ \\\.php$ {|location /api/v2 {\\\n    try_files $uri /api/v2/index.php$is_args$args;\\\n  }\\\n\\\n  location ~ \\\.php$ {|g' /config/nginx/site-confs/default
+  sed -i $'s|# V0.0.4|# V0.0.3|g' /config/nginx/site-confs/default # Oops
+  sed -i $'s|# V0.0.3|# V0.0.4|g' /config/nginx/site-confs/default
+fi
+if [[ $(grep -c "location /api/v2 {" /config/nginx/site-confs/default) -eq 0 ]]; then
+  printf "Api location for api version 2 is not found.\nPlease visit https://organizr.app/v2-api and follow the instructions.\n"
+fi
+
+# Fetch site or update existing
+if [ "$branch" == "manual" ]; then
+  echo "Skipping update"
+elif [[ ! -d /config/www/organizr/.git ]]; then
+  echo '-----------------------'
+  echo '| Installing Organizr |'
+  echo '-----------------------'
+  mkdir -p /config/www/organizr
+  git clone --progress --verbose -b "$(cat /Docker.txt)" https://github.com/causefx/Organizr /config/www/organizr || exit 1
+  cd /config/www/organizr || (
+    echo 'Failed to load Organizr repository folder'
+    exit
+  )
+  git config --global --add safe.directory /config/www
+  git config --global --add safe.directory /config/www/organizr
+  git rev-parse HEAD >/config/www/organizr/Github.txt
+elif [[ -d /config/www/organizr/.git ]]; then
+  echo '-----------------------'
+  echo '|  Updating Organizr  |'
+  echo '-----------------------'
+  cd /config/www/organizr || (
+    echo 'Failed to load Organizr repository folder'
+    exit 0
+  )
+  git config --global --add safe.directory /config/www
+  git config --global --add safe.directory /config/www/organizr
+  git fetch
+  git reset --hard origin/"$(cat /Docker.txt)"
+  git checkout "$(cat /Docker.txt)"
+  git reset --hard origin/"$(cat /Docker.txt)"
+  git pull
+  git rev-parse HEAD >/config/www/organizr/Github.txt
+elif ! ping -c 1 https://github.com &>/dev/null; then
+  echo "Git clone failed, but github is resolvable"
+else
+  echo "Git clone failed"
+fi
+
+if [ ! "$branch" == "manual" ]; then
+  # Make sure the config.php file is using the correct branch
+  if [[ -a /config/www/organizr/data/config/config.php ]]; then
+    sed -i "s/'branch' => '[^']*',/'branch' =\> '$(cat /Docker.txt)',/" /config/www/organizr/data/config/config.php
+  fi
+  sed -i "s/'branch' => '[^']*',/'branch' =\> '$(cat /Docker.txt)',/" /config/www/organizr/api/config/default.php
+  if grep -q cron.sh /etc/crontabs/root; then
+    echo "Cron already added..."
+  else
+    echo "Adding cron now..."
+    echo "* * * * *  /bin/bash /org/cron.sh" >>/etc/crontabs/root
+  fi
+fi
+
+cp /Docker.txt /config/www/organizr/Docker.txt || (
+  echo 'Failed to move Docker flag, are you running with the updater disabled?'
+  exit 0
+)
+
+# Set Permissions
+lsiown -R abc:abc \
+  /config

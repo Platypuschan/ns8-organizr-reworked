@@ -1,0 +1,14 @@
+/config/log/php/*.log {
+        rotate 7
+        weekly
+        missingok
+        notifempty
+        delaycompress
+        compress
+        dateext
+        sharedscripts
+        postrotate
+                s6-svc -t /run/service/php-fpm
+        endscript
+        su abc abc
+}
