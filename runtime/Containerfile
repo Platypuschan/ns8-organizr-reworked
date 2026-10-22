@@ -33,10 +33,10 @@ RUN set -eux; \
         s6-overlay \
         shadow \
         tzdata \
-        php83 \
+        'php83>=8.3.36-r0' \
         php83-curl \
         php83-fileinfo \
-        php83-fpm \
+        'php83-fpm>=8.3.36-r0' \
         php83-ftp \
         php83-ldap \
         php83-mbstring \
@@ -73,11 +73,16 @@ RUN set -eux; \
     sed -i "s#^pm.max_children = 5#pm.max_children = 4000#" "$www"; \
     sed -i "s#^pm.start_servers = 2#;pm.start_servers = 2#" "$www"; \
     sed -i "s#^;pm.process_idle_timeout = 10s;#pm.process_idle_timeout = 10s;#" "$www"; \
-    sed -i "s#^;pm.max_requests = 500#pm.max_requests = 0#" "$www"; \
+    # Recycle workers regularly: limits how long request state from a failed
+    # request can survive in a worker (defence in depth, cf. CVE-2026-109619).
+    sed -i "s#^;pm.max_requests = 500#pm.max_requests = 500#" "$www"; \
     sed -i "s#^zlib.output_compression = Off#zlib.output_compression = On#" /etc/php83/php.ini; \
     grep -qx 'listen = /var/run/php8-fpm.sock' "$www"; \
     grep -qx 'listen.owner = abc' "$www"; \
     grep -qx 'pm = ondemand' "$www"; \
+    grep -qx 'pm.max_requests = 500' "$www"; \
+    # PHP2Shell (CVE-2026-109618/-109619) is fixed in 8.3.36; refuse older builds.
+    php83 -r 'exit(version_compare(PHP_VERSION, "8.3.36", ">=") ? 0 : 1);'; \
     rm -rf /var/cache/apk/* /tmp/*
 
 COPY root/ /
