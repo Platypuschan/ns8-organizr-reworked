@@ -1,5 +1,84 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>NethServer/.github:ns8"],
-  "automerge": false
+  "extends": ["config:recommended", ":enableVulnerabilityAlerts"],
+  "branchPrefix": "renovate-",
+  "branchNameStrict": true,
+  "dependencyDashboard": true,
+  "dependencyDashboardTitle": "Dependency updates",
+  "automerge": false,
+  "rebaseWhen": "behind-base-branch",
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "minimumReleaseAge": "5 days",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "automerge": false,
+    "minimumReleaseAge": "0 days"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "bumpVersions": [{
+      "name": "NS8 module release",
+      "filePatterns": ["CATALOG_VERSION"],
+      "matchStrings": ["^(?<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\\s*$"],
+      "bumpType": "patch"
+    }]
+  },
+  "customManagers": [{
+    "customType": "regex",
+    "description": "Production UI build image in the shell build script",
+    "managerFilePatterns": ["/^build-images\\.sh$/"],
+    "matchStrings": ["node_image=\"(?<depName>docker\\.io/library/node):(?<currentValue>[^\"@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?\""],
+    "datasourceTemplate": "docker"
+  }],
+  "packageRules": [
+    {
+      "description": "Image-affecting updates must also advance the immutable module release",
+      "matchFileNames": ["ui/**", "runtime/**", "build-images.sh"],
+      "bumpVersions": [{
+        "name": "NS8 module release",
+        "filePatterns": ["CATALOG_VERSION"],
+        "matchStrings": ["^(?<version>[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?)\\s*$"],
+        "bumpType": "patch"
+      }]
+    },
+    {
+      "description": "Keep the current Corepack-compatible Node major coordinated across all consumers",
+      "matchPackageNames": ["node", "docker.io/library/node", "actions/node-versions"],
+      "allowedVersions": ">=24 <25",
+      "groupName": "Node.js 24 toolchain",
+      "groupSlug": "node-24-toolchain"
+    },
+    {
+      "description": "Routine UI updates share one tested image; migrations stay separate",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "UI dependencies",
+      "groupSlug": "ui-dependencies"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["action", "workflow", "github-runner"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "GitHub Actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "matchFileNames": ["runtime/Containerfile"],
+      "matchDatasources": ["docker"],
+      "pinDigests": true
+    },
+    {
+      "description": "Show major migrations in the dashboard, but require explicit approval before building",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Never inherit dependency-specific automerge permissions",
+      "matchPackageNames": ["*"],
+      "automerge": false
+    }
+  ]
 }

@@ -1,0 +1,35 @@
+name: Renovate policy
+
+on:
+  push:
+    paths:
+      - renovate.json
+      - .github/scripts/test-renovate.mjs
+      - .github/workflows/renovate-policy.yml
+  pull_request:
+    paths:
+      - renovate.json
+      - .github/scripts/test-renovate.mjs
+      - .github/workflows/renovate-policy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/renovatebot/renovate:44.222.5
+      # The image's default user cannot write GitHub runner file-command state.
+      options: --user=0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Validate configuration including presets
+        run: renovate-config-validator --strict renovate.json
+      - name: Exercise actual Renovate matching and version bumps
+        run: node .github/scripts/test-renovate.mjs
+      - name: Extract repository dependencies
+        run: renovate --platform=local --dry-run=extract --require-config=required --onboarding=false
