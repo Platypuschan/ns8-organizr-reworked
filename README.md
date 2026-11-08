@@ -200,6 +200,67 @@ remove-module --no-preserve organizr-reworked1
 
 `--no-preserve` permanently removes the instance data. Verify backups first.
 
+## Dependency update automation
+
+[Renovate](renovate.json) is the sole dependency PR updater. It tracks the
+Alpine runtime base (tag and digest), the production Node image in
+`build-images.sh`, the UI development container, Node in validation CI,
+`ui/package.json` / `ui/yarn.lock`, GitHub Actions and the development container.
+The repository uses explicit local policy on top of `config:recommended`, rather
+than inheriting NS8 preset rules that can silently enable selected automerges or
+hide all npm major migrations.
+
+- Routine UI updates are grouped. Node consumers form a separate Node 24 group;
+  moving to a new Node major requires testing Corepack and the real UI build
+  bootstrap first and adjusting `allowedVersions` explicitly.
+- Major updates appear in the **Dependency updates** dashboard and require
+  dashboard approval before a PR is created. They still require manual merge.
+- At most three regular dependency PRs are open concurrently, with at most two
+  created per hour. Existing open PRs are not forcibly closed by this limit.
+- Ordinary releases wait five days; vulnerability alerts bypass that age delay.
+  Alerts stay enabled without the old preset's explicit Vue suppression. This
+  does not mean the legacy Vue 2 stack is supported or free of vulnerabilities.
+- Yarn lockfile maintenance runs before 06:00 UTC on Mondays, when Renovate
+  next visits the repository. This is a bot scheduling window, not a guaranteed
+  execution time. Security PRs can bypass ordinary scheduling and PR limits.
+- Image-affecting dependency changes also patch-bump `CATALOG_VERSION`, including
+  lockfile-only maintenance. Rebasing behind `main` recalculates the version;
+  the existing catalog-version CI gate remains the authority. Workflow-only
+  updates do not consume a module release version.
+- Non-major updates and lockfile maintenance automerge as squash PRs only after
+  CI succeeds. Renovate performs the merge (`platformAutomerge: false`) so it
+  observes all checks, not only GitHub's minimum required set. Major updates
+  never automerge. Protected `main` also requires an up-to-date branch, static
+  checks, UI build, Renovate policy checks and all four NS8 install/update
+  statuses. Do not bypass those checks or the version gate. After merge,
+  the existing tested-image promotion and GitHub-release workflow owns
+  publication; installing that version on an NS8 instance is a separate step.
+
+The policy takes effect only after `renovate.json` reaches `main`. Existing
+Renovate PRs may need a bot rebase/retry to pick up version bumps and regrouping;
+this configuration change neither merges nor manually rewrites those PRs.
+
+### Runtime package refresh boundary
+
+Renovate's Alpine image updates rebuild `runtime/`, running `apk upgrade` and
+`apk add` again. It does **not** individually track the unpinned PHP/nginx/s6 APK
+packages. If Alpine publishes a package fix without changing the base image tag
+or digest, Renovate may not propose a rebuild. Re-running CI on an unchanged
+runtime tree does not help: the existing immutable runtime tag is reused.
+
+For such package-only fixes, make a tracked change under `runtime/` (for example
+an explanatory package-floor change in `runtime/Containerfile`), raise
+`CATALOG_VERSION`, and test the newly built runtime before publishing. Never
+replace an existing runtime tag. Automated package-only refresh detection is
+not implemented. Likewise, Organizr's existing startup updater remains separate
+from Renovate; restarting can change application code without a module release.
+No automatic instance updates or restarts are enabled by this policy.
+
+The **Renovate policy** workflow validates the configuration with a pinned
+official Renovate image, extracts actual dependencies, and exercises the native
+engine's package rules and release bumps. Its regression test imports Renovate
+internals intentionally, so engine updates must pass that test too.
+
 ## Testing
 
 Static checks and the UI build run for every push and pull request. The module
