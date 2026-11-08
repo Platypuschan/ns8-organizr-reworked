@@ -37,7 +37,7 @@ async function checkBump(upgrades, changedFile, artifact = false, expected = tru
 
 const ui = await rule({ manager: 'npm', packageFile: 'ui/package.json', depName: 'axios', packageName: 'axios', updateType: 'patch' });
 assert.equal(ui.groupName, 'UI dependencies');
-assert.equal(ui.automerge, false);
+assert.equal(ui.automerge, true);
 await checkBump([ui], 'ui/package.json');
 await checkBump([ui], 'ui/yarn.lock', true);
 
@@ -58,12 +58,12 @@ await checkBump([nodes[2], nodes[0], nodes[1]], 'build-images.sh');
 
 const alpine = await rule({ manager: 'dockerfile', packageFile: 'runtime/Containerfile', depName: 'docker.io/library/alpine', packageName: 'docker.io/library/alpine', datasource: 'docker', updateType: 'digest' });
 assert.equal(alpine.pinDigests, true);
-assert.equal(alpine.automerge, false);
+assert.equal(alpine.automerge, true);
 await checkBump([alpine], 'runtime/Containerfile');
 
 const action = await rule({ manager: 'github-actions', packageFile: '.github/workflows/validate.yml', depName: 'actions/checkout', packageName: 'actions/checkout', depType: 'action', updateType: 'patch' });
 assert.equal(action.groupName, 'GitHub Actions');
-assert.equal(action.automerge, false);
+assert.equal(action.automerge, true);
 await checkBump([action], '.github/workflows/validate.yml', false, false);
 
 const migration = await rule({ manager: 'npm', packageFile: 'ui/package.json', depName: 'vue', packageName: 'vue', updateType: 'major' });
@@ -88,5 +88,10 @@ assert.match(extracted.deps[0].currentValue, /^24\..+-slim$/);
 assert.equal(extracted.deps[0].datasource, 'docker');
 assert.equal(config.dependencyDashboard, true);
 assert.equal(config.vulnerabilityAlerts.minimumReleaseAge, '0 days');
-assert.equal(config.vulnerabilityAlerts.automerge, false);
-console.log('Renovate policy passed: native RE2, shell extraction, Node grouping, major approval, no automerge, image/lockfile/group bumps and workflow-only/no-op exclusions.');
+assert.equal(config.automerge, true);
+assert.equal(config.platformAutomerge, false);
+assert.equal(config.automergeType, 'pr');
+assert.equal(config.automergeStrategy, 'squash');
+assert.equal(config.vulnerabilityAlerts.automerge, undefined);
+await checkBump([nodes[2]], '.github/workflows/validate.yml', false, false);
+console.log('Renovate policy passed: native RE2, shell extraction, Node grouping, major approval, guarded non-major automerge, image/lockfile/group bumps and workflow-only/no-op exclusions.');

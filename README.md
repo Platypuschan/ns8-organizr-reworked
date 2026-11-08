@@ -227,8 +227,12 @@ hide all npm major migrations.
   lockfile-only maintenance. Rebasing behind `main` recalculates the version;
   the existing catalog-version CI gate remains the authority. Workflow-only
   updates do not consume a module release version.
-- Automerge is disabled. Review CI (including NS8 install/update tests) and merge
-  one image-changing PR at a time. Do not bypass the version check. After merge,
+- Non-major updates and lockfile maintenance automerge as squash PRs only after
+  CI succeeds. Renovate performs the merge (`platformAutomerge: false`) so it
+  observes all checks, not only GitHub's minimum required set. Major updates
+  never automerge. Protected `main` also requires an up-to-date branch, static
+  checks, UI build, Renovate policy checks and all four NS8 install/update
+  statuses. Do not bypass those checks or the version gate. After merge,
   the existing tested-image promotion and GitHub-release workflow owns
   publication; installing that version on an NS8 instance is a separate step.
 

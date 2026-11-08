@@ -5,7 +5,10 @@
   "branchNameStrict": true,
   "dependencyDashboard": true,
   "dependencyDashboardTitle": "Dependency updates",
-  "automerge": false,
+  "automerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "platformAutomerge": false,
   "rebaseWhen": "behind-base-branch",
   "prConcurrentLimit": 3,
   "prHourlyLimit": 2,
@@ -13,7 +16,6 @@
   "osvVulnerabilityAlerts": true,
   "vulnerabilityAlerts": {
     "enabled": true,
-    "automerge": false,
     "minimumReleaseAge": "0 days"
   },
   "lockFileMaintenance": {
@@ -73,11 +75,7 @@
     {
       "description": "Show major migrations in the dashboard, but require explicit approval before building",
       "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true
-    },
-    {
-      "description": "Never inherit dependency-specific automerge permissions",
-      "matchPackageNames": ["*"],
+      "dependencyDashboardApproval": true,
       "automerge": false
     }
   ]
