@@ -15,7 +15,7 @@ repository_source="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:
 # pushes it before this script runs. The application itself is refreshed from
 # the selected branch at startup.
 organizr_image="$(.github/scripts/runtime-image)"
-node_image="docker.io/library/node:24.20.0-slim"
+node_image="docker.io/library/node:26.12.1-slim"
 
 if [[ -z "${CI:-}" ]] && ! buildah inspect --type image "${organizr_image}" >/dev/null 2>&1; then
     echo "Building the Organizr runtime image ${organizr_image}..."
