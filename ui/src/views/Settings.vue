@@ -3,7 +3,7 @@
   SPDX-License-Identifier: GPL-3.0-or-later
 -->
 <template>
-  <cv-grid fullWidth>
+  <cv-grid full-width>
     <cv-row>
       <cv-column class="page-title">
         <h2>{{ $t("settings.title") }}</h2>
@@ -15,7 +15,7 @@
           kind="error"
           :title="$t('action.get-configuration')"
           :description="error.getConfiguration"
-          :showCloseButton="false"
+          :show-close-button="false"
         />
       </cv-column>
     </cv-row>
@@ -23,56 +23,54 @@
       <cv-column>
         <cv-tile light>
           <cv-form @submit.prevent="configureModule">
-            <cv-text-input
-              :label="$t('settings.organizr_fqdn')"
-              placeholder="organizr.example.org"
-              v-model.trim="host"
-              class="mg-bottom"
-              :invalid-message="$t(error.host)"
-              :disabled="loading.getConfiguration || loading.configureModule"
-              ref="host"
-            >
-            </cv-text-input>
+            <div class="mg-bottom">
+              <cv-text-input
+                ref="host"
+                :label="$t('settings.organizr_fqdn')"
+                placeholder="organizr.example.org"
+                :model-value="host"
+                :invalid-message="tKey(error.host)"
+                :disabled="loading.getConfiguration || loading.configureModule"
+                @update:model-value="host = $event.trim()"
+              >
+              </cv-text-input>
+            </div>
             <cv-toggle
+              v-model="isLetsEncryptEnabled"
               value="letsEncrypt"
               :label="$t('settings.lets_encrypt')"
-              v-model="isLetsEncryptEnabled"
               :disabled="loading.getConfiguration || loading.configureModule"
               class="mg-bottom"
             >
-              <template slot="text-left">{{
-                $t("settings.disabled")
-              }}</template>
-              <template slot="text-right">{{
-                $t("settings.enabled")
-              }}</template>
+              <template #text-left>{{ $t("settings.disabled") }}</template>
+              <template #text-right>{{ $t("settings.enabled") }}</template>
             </cv-toggle>
             <cv-toggle
+              v-model="isHttpToHttpsEnabled"
               value="httpToHttps"
               :label="$t('settings.http_to_https')"
-              v-model="isHttpToHttpsEnabled"
               :disabled="loading.getConfiguration || loading.configureModule"
               class="mg-bottom"
             >
-              <template slot="text-left">{{
-                $t("settings.disabled")
-              }}</template>
-              <template slot="text-right">{{
-                $t("settings.enabled")
-              }}</template>
+              <template #text-left>{{ $t("settings.disabled") }}</template>
+              <template #text-right>{{ $t("settings.enabled") }}</template>
             </cv-toggle>
             <div class="setup-settings mg-bottom">
               <h3>{{ $t("settings.setup_title") }}</h3>
               <template v-if="setupModeState === 'pending'">
-                <cv-radio-group vertical>
+                <cv-radio-group
+                  vertical
+                  :legend-text="$t('settings.setup_title')"
+                  hide-legend
+                >
                   <cv-radio-button
+                    ref="setup_mode"
                     v-model="setupMode"
                     value="managed"
                     :label="$t('settings.setup_managed')"
                     :disabled="
                       loading.getConfiguration || loading.configureModule
                     "
-                    ref="setup_mode"
                   />
                   <p class="setup-help">
                     {{ $t("settings.setup_managed_help") }}
@@ -90,7 +88,7 @@
                   </p>
                 </cv-radio-group>
                 <p v-if="error.setup_mode" class="setup-error">
-                  {{ $t(error.setup_mode) }}
+                  {{ tKey(error.setup_mode) }}
                 </p>
               </template>
               <p v-else>{{ $t(`settings.setup_${setupMode}`) }}</p>
@@ -102,21 +100,24 @@
                 kind="warning"
                 :title="$t('settings.manual_warning_title')"
                 :description="$t('settings.manual_warning')"
-                :showCloseButton="false"
+                :show-close-button="false"
               />
             </div>
-            <div v-if="setupMode === 'managed'" class="setup-settings mg-bottom">
+            <div
+              v-if="setupMode === 'managed'"
+              class="setup-settings mg-bottom"
+            >
               <h3>{{ $t("settings.ad_title") }}</h3>
               <p class="setup-help">{{ $t("settings.ad_description") }}</p>
               <cv-toggle
+                v-model="isAdEnabled"
                 value="adAuthentication"
                 :label="$t('settings.ad_enabled')"
-                v-model="isAdEnabled"
                 :disabled="loading.getConfiguration || loading.configureModule"
                 class="mg-bottom"
               >
-                <template slot="text-left">{{ $t("settings.disabled") }}</template>
-                <template slot="text-right">{{ $t("settings.enabled") }}</template>
+                <template #text-left>{{ $t("settings.disabled") }}</template>
+                <template #text-right>{{ $t("settings.enabled") }}</template>
               </cv-toggle>
               <template v-if="isAdEnabled">
                 <NsInlineNotification
@@ -124,29 +125,41 @@
                   kind="error"
                   :title="$t('action.list-user-domains')"
                   :description="error.listUserDomains"
-                  :showCloseButton="false"
+                  :show-close-button="false"
                 />
                 <NsComboBox
+                  ref="ad_domain"
                   v-model="adDomain"
                   :options="adDomains"
                   auto-highlight
                   :title="$t('settings.ad_domain')"
                   :label="$t('settings.ad_domain_placeholder')"
-                  :invalid-message="$t(error.ad_domain)"
-                  :disabled="loading.getConfiguration || loading.configureModule || loading.listUserDomains"
+                  :invalid-message="tKey(error.ad_domain)"
+                  :disabled="
+                    loading.getConfiguration ||
+                    loading.configureModule ||
+                    loading.listUserDomains
+                  "
                   class="mg-bottom"
-                  ref="ad_domain"
                 />
-                <cv-text-input
-                  :label="$t('settings.ad_user_search_base')"
-                  v-model.trim="adUserSearchBase"
-                  :invalid-message="$t(error.ad_user_search_base)"
-                  :disabled="loading.getConfiguration || loading.configureModule"
-                  class="mg-bottom"
-                  ref="ad_user_search_base"
-                />
-                <p class="setup-help">{{ $t("settings.ad_user_search_base_help") }}</p>
-                <p class="setup-help">{{ $t("settings.ad_recovery_name_help") }}</p>
+                <div class="mg-bottom">
+                  <cv-text-input
+                    ref="ad_user_search_base"
+                    :label="$t('settings.ad_user_search_base')"
+                    :model-value="adUserSearchBase"
+                    :invalid-message="tKey(error.ad_user_search_base)"
+                    :disabled="
+                      loading.getConfiguration || loading.configureModule
+                    "
+                    @update:model-value="adUserSearchBase = $event.trim()"
+                  />
+                </div>
+                <p class="setup-help">
+                  {{ $t("settings.ad_user_search_base_help") }}
+                </p>
+                <p class="setup-help">
+                  {{ $t("settings.ad_recovery_name_help") }}
+                </p>
               </template>
             </div>
             <cv-accordion
@@ -155,10 +168,10 @@
               @change="credentialsAccordionChanged"
             >
               <cv-accordion-item>
-                <template slot="title">
+                <template #title>
                   {{ $t("settings.credentials_title") }}
                 </template>
-                <template slot="content">
+                <template #content>
                   <p class="setup-help">
                     {{ $t("settings.credentials_help") }}
                   </p>
@@ -172,19 +185,19 @@
                     kind="error"
                     :title="$t('action.get-setup-credentials')"
                     :description="error.getCredentials"
-                    :showCloseButton="false"
+                    :show-close-button="false"
                   />
                   <template v-else-if="credentialsLoaded">
                     <label class="bx--label">
                       {{ $t("settings.admin_username") }}
                     </label>
-                    <NsCodeSnippet light hideExpandButton>
+                    <NsCodeSnippet light hide-expand-button>
                       {{ adminUsername }}
                     </NsCodeSnippet>
                     <label class="bx--label">
                       {{ $t("settings.admin_password") }}
                     </label>
-                    <NsCodeSnippet light hideExpandButton>
+                    <NsCodeSnippet light hide-expand-button>
                       {{ adminPassword }}
                     </NsCodeSnippet>
                   </template>
@@ -197,7 +210,7 @@
                   kind="error"
                   :title="$t('action.configure-module')"
                   :description="error.configureModule"
-                  :showCloseButton="false"
+                  :show-close-button="false"
                 />
               </cv-column>
             </cv-row>
@@ -224,7 +237,7 @@ import {
   TaskService,
   IconService,
   PageTitleService,
-} from "@nethserver/ns8-ui-lib";
+} from "@/ns8";
 
 export default {
   name: "Settings",
@@ -295,7 +308,7 @@ export default {
     this.clearCredentials();
     next();
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.clearCredentials();
   },
   methods: {
@@ -305,17 +318,10 @@ export default {
       const taskAction = "get-configuration";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.getConfigurationAborted
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.getConfigurationCompleted
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.getConfigurationAborted,
+        completed: this.getConfigurationCompleted,
+      });
 
       const res = await to(
         this.createModuleTaskForApp(this.instanceName, {
@@ -325,7 +331,7 @@ export default {
             isNotificationHidden: true,
             eventId,
           },
-        })
+        }),
       );
       const err = res[0];
 
@@ -408,23 +414,11 @@ export default {
       const taskAction = "configure-module";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.configureModuleAborted
-      );
-
-      // register to task validation
-      this.core.$root.$once(
-        `${taskAction}-validation-failed-${eventId}`,
-        this.configureModuleValidationFailed
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.configureModuleCompleted
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.configureModuleAborted,
+        "validation-failed": this.configureModuleValidationFailed,
+        completed: this.configureModuleCompleted,
+      });
       const res = await to(
         this.createModuleTaskForApp(this.instanceName, {
           action: taskAction,
@@ -444,7 +438,7 @@ export default {
             description: this.$t("settings.configuring"),
             eventId,
           },
-        })
+        }),
       );
       const err = res[0];
 
@@ -471,16 +465,12 @@ export default {
       this.error.listUserDomains = "";
       const taskAction = "list-user-domains";
       const eventId = this.getUuid();
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        () => {
+      this.subscribeTask(taskAction, eventId, {
+        aborted: () => {
           this.error.listUserDomains = this.$t("error.generic_error");
           this.loading.listUserDomains = false;
-        }
-      );
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        (taskContext, taskResult) => {
+        },
+        completed: (taskContext, taskResult) => {
           this.adDomains = taskResult.output.domains
             .filter((domain) => domain.schema === "ad")
             .map((domain) => ({
@@ -489,8 +479,8 @@ export default {
               value: domain.name,
             }));
           this.loading.listUserDomains = false;
-        }
-      );
+        },
+      });
       const [err] = await to(
         this.createClusterTaskForApp({
           action: taskAction,
@@ -499,16 +489,15 @@ export default {
             isNotificationHidden: true,
             eventId,
           },
-        })
+        }),
       );
       if (err) {
         this.error.listUserDomains = this.getErrorMessage(err);
         this.loading.listUserDomains = false;
       }
     },
-    credentialsAccordionChanged({ changedIndex, state }) {
-      if (changedIndex !== 0) return;
-      if (state[0]) {
+    credentialsAccordionChanged({ change }) {
+      if (change.open) {
         this.credentialsOpen = true;
         this.getCredentials();
       } else {
@@ -527,26 +516,22 @@ export default {
       this.error.getCredentials = "";
       const taskAction = "get-setup-credentials";
       const eventId = this.getUuid();
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        () => {
+      this.subscribeTask(taskAction, eventId, {
+        aborted: () => {
           if (this.credentialsOpen) {
             this.error.getCredentials = this.$t("error.generic_error");
           }
           this.loading.getCredentials = false;
-        }
-      );
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        (taskContext, taskResult) => {
+        },
+        completed: (taskContext, taskResult) => {
           if (this.credentialsOpen) {
             this.adminUsername = taskResult.output.username;
             this.adminPassword = taskResult.output.password;
             this.credentialsLoaded = true;
           }
           this.loading.getCredentials = false;
-        }
-      );
+        },
+      });
       const [err] = await to(
         this.createModuleTaskForApp(this.instanceName, {
           action: taskAction,
@@ -555,7 +540,7 @@ export default {
             isNotificationHidden: true,
             eventId,
           },
-        })
+        }),
       );
       if (err) {
         if (this.credentialsOpen) {

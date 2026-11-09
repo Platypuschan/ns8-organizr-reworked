@@ -34,6 +34,23 @@
     "managerFilePatterns": ["/^build-images\\.sh$/"],
     "matchStrings": ["node_image=\"(?<depName>docker\\.io/library/node):(?<currentValue>[^\"@]+)(?:@(?<currentDigest>sha256:[a-f0-9]+))?\""],
     "datasourceTemplate": "docker"
+  }, {
+    "customType": "regex",
+    "description": "Installed runtime APK refresh targets",
+    "managerFilePatterns": ["/^runtime/apk-refresh\\.txt$/"],
+    "matchStringsStrategy": "recursive",
+    "matchStrings": [
+      "# registry=(?<registryUrl>[^\\n]+)\\n[\\s\\S]*",
+      "(?:^|\\n)(?<depName>[a-z0-9][a-z0-9+_.-]*)=(?<currentValue>[^\\n]+)"
+    ],
+    "datasourceTemplate": "apk",
+    "versioningTemplate": "apk"
+  }, {
+    "customType": "regex",
+    "description": "NS8 host stylesheet test image",
+    "managerFilePatterns": ["/^\\.github/workflows/validate\\.yml$/"],
+    "matchStrings": ["NS8_CORE_IMAGE: (?<depName>ghcr\\.io/nethserver/core):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"],
+    "datasourceTemplate": "docker"
   }],
   "packageRules": [
     {
@@ -71,6 +88,36 @@
       "matchFileNames": ["runtime/Containerfile"],
       "matchDatasources": ["docker"],
       "pinDigests": true
+    },
+    {
+      "description": "Base image and all installed APK targets share one tested runtime",
+      "matchFileNames": ["runtime/**"],
+      "matchDatasources": ["apk", "docker"],
+      "groupName": "Alpine runtime",
+      "groupSlug": "alpine-runtime"
+    },
+    {
+      "description": "The installed inventory alone owns APK refreshes, including PHP floor constraints",
+      "matchFileNames": ["runtime/Containerfile"],
+      "matchManagers": ["dockerfile"],
+      "matchDatasources": ["apk"],
+      "enabled": false
+    },
+    {
+      "description": "A new Alpine branch needs reviewed registry and installed-inventory migration",
+      "matchFileNames": ["runtime/Containerfile"],
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "major"],
+      "dependencyDashboardApproval": true,
+      "automerge": false
+    },
+    {
+      "description": "Keep future framework and lint-tool major migrations coordinated and manual",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["ui/package.json"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "UI major migration",
+      "groupSlug": "ui-major-migration"
     },
     {
       "description": "Show major migrations in the dashboard, but require explicit approval before building",
