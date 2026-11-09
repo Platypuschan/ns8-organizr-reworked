@@ -9,6 +9,8 @@ ${IMAGE_URL}         ghcr.io/platypuschan/organizr-reworked:latest
 ${PREVIOUS_IMAGE_URL}    ${EMPTY}
 ${SCENARIO}          install
 ${HOST}              organizr.test
+${UI_HOST}           organizr-ui.test
+${NS8_URL}           https://${NODE_ADDR}
 ${MANUAL_HOST}       organizr-manual.test
 ${ADMIN_USER}        admin
 ${ADMIN_PASSWORD}    Nethesis,1234
@@ -70,12 +72,42 @@ AD reconciliation unit state is
     Should Be Equal    ${state}    ${expected}
 
 Login to cluster-admin
-    New Page    https://${NODE_ADDR}/cluster-admin/
+    New Page    ${NS8_URL}/cluster-admin/
     Fill Text    text="Username"    ${ADMIN_USER}
     Click    button >> text="Continue"
     Fill Text    text="Password"    ${ADMIN_PASSWORD}
     Click    button >> text="Log in"
     Wait For Elements State    css=#main-content    visible    timeout=10s
+
+Configuration host is
+    [Arguments]    ${expected}
+    ${config}    ${rc} =    Execute Command    api-cli run module/${module_id}/get-configuration
+    ...    return_rc=True
+    Should Be Equal As Integers    ${rc}    0
+    ${actual} =    Evaluate    json.loads($config)['host']    modules=json
+    Should Be Equal    ${actual}    ${expected}
+
+Save host through Settings
+    [Arguments]    ${host}
+    Fill Text    iframe >>> input[placeholder="organizr.example.org"]    ${host}
+    # Arm before clicking: observe the real task's loading state and its
+    # completed-event -> get-configuration roundtrip, not merely a local value.
+    ${loading} =    Promise To    Wait For Elements State    iframe >>> input[placeholder="organizr.example.org"]    disabled    timeout=30s
+    Click    iframe >>> button >> text="Save"
+    Wait For    ${loading}
+    Wait For Elements State    iframe >>> input[placeholder="organizr.example.org"]    enabled    timeout=300s
+    Get Property    iframe >>> input[placeholder="organizr.example.org"]    value    ==    ${host}
+    Configuration host is    ${host}
+    # A fresh page must also obtain the saved value from the live backend.
+    Go To    ${NS8_URL}/cluster-admin/#/apps/${module_id}?page=settings
+    Wait For Elements State    iframe >>> input[placeholder="organizr.example.org"]    enabled    timeout=30s
+    Get Property    iframe >>> input[placeholder="organizr.example.org"]    value    ==    ${host}
+
+Recovery credentials are displayed
+    # Return a boolean only: never put recovery passwords in Robot logs.
+    ${ready} =    Evaluate JavaScript    iframe >>> .bx--accordion__content
+    ...    (element) => { const values = [...element.querySelectorAll('code pre')].map(el => el.textContent.trim()); return values.length === 2 && values[0] === 'ns8-recovery-admin' && values[1].length >= 32; }
+    Should Be True    ${ready}    Recovery username and password have not loaded
 
 *** Test Cases ***
 Add and configure module
@@ -290,23 +322,41 @@ Disable AD login and remove the test domain
 
 Take UI screenshots
     [Tags]    ui
-    Import Library    Browser
+    # Credentials must not reach failure screenshots or protocol logs.
+    Import Library    Browser    run_on_failure=NONE    enable_playwright_debug=disabled
     New Browser    chromium    headless=True
     New Context    ignoreHTTPSErrors=True
-    Login to cluster-admin
-    Go To    https://${NODE_ADDR}/cluster-admin/#/apps/${module_id}
-    Wait For Elements State    iframe >>> h2 >> text="Status"    visible    timeout=20s
-    Sleep    3s
-    Take Screenshot    filename=${OUTPUT DIR}/browser/screenshot/1._Status.png
-    Go To    https://${NODE_ADDR}/cluster-admin/#/apps/${module_id}?page=settings
-    Wait For Elements State    iframe >>> h2 >> text="Settings"    visible    timeout=20s
-    # The heading renders even when module tasks fail; the host field is only
-    # enabled and filled after get-configuration has completed
-    Wait For Elements State    iframe >>> input[placeholder="organizr.example.org"]    enabled    timeout=30s
-    Get Property    iframe >>> input[placeholder="organizr.example.org"]    value    ==    ${HOST}
-    Sleep    3s
-    Take Screenshot    filename=${OUTPUT DIR}/browser/screenshot/2._Settings.png
-    Close Browser
+    TRY
+        Login to cluster-admin
+        Go To    ${NS8_URL}/cluster-admin/#/apps/${module_id}
+        Wait For Elements State    iframe >>> h2 >> text="Status"    visible    timeout=30s
+        # These values only render after live get-configuration/get-status tasks.
+        Wait For Elements State    iframe >>> text="${HOST}"    visible    timeout=30s
+        Wait For Elements State    iframe >>> .service-name >> text=/^organizr([.]service)?$/    visible    timeout=30s
+        Wait For Elements State    iframe >>> .bx--structured-list-td >> text=/organizr-runtime:/    visible    timeout=30s
+        Take Screenshot    filename=${OUTPUT DIR}/browser/screenshot/1._Status.png
+        Go To    ${NS8_URL}/cluster-admin/#/apps/${module_id}?page=settings
+        Wait For Elements State    iframe >>> h2 >> text="Settings"    visible    timeout=30s
+        Wait For Elements State    iframe >>> input[placeholder="organizr.example.org"]    enabled    timeout=30s
+        Get Property    iframe >>> input[placeholder="organizr.example.org"]    value    ==    ${HOST}
+        Should Not Be Equal    ${UI_HOST}    ${HOST}
+        Save host through Settings    ${UI_HOST}
+        Save host through Settings    ${HOST}
+        Take Screenshot    filename=${OUTPUT DIR}/browser/screenshot/2._Settings.png
+        Click    iframe >>> button >> text="Initial administrator"
+        Wait Until Keyword Succeeds    30 seconds    1 second    Recovery credentials are displayed
+        Click    iframe >>> button >> text="Initial administrator"
+        # Closing must clear the secret DOM, not simply hide it.
+        Get Element Count    iframe >>> .bx--accordion__content code pre    ==    0
+    FINALLY
+        # Recover even if a UI save/assertion failed after changing the route.
+        ${restored} =    Run Keyword And Return Status    Configuration host is    ${HOST}
+        IF    not ${restored}
+            Configure module
+            Configuration host is    ${HOST}
+        END
+        Close Browser
+    END
 
 Remove module
     ${rc} =    Execute Command    remove-module --no-preserve ${module_id}
