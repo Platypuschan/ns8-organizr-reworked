@@ -27,3 +27,6 @@ pnpm-debug.log*
 !.yarn/patches
 !.yarn/releases
 !.yarn/plugins
+dist-dev
+test-results
+playwright-report
