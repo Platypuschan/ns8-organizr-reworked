@@ -21,7 +21,12 @@ ENV TZ=Etc/UTC \
     fpm=false \
     branch=v2-master
 
+# Tracked minimum refresh targets invalidate the cached APK layer even if FROM
+# is unchanged. This inventory is deliberately not a full package lockfile.
+COPY apk-refresh.txt verify-apk.sh /usr/local/share/organizr/
+
 RUN set -eux; \
+    apk update; \
     apk upgrade --no-cache; \
     apk add --no-cache \
         bash \
@@ -51,6 +56,7 @@ RUN set -eux; \
         php83-xml \
         php83-xmlwriter \
         php83-zip; \
+    sh /usr/local/share/organizr/verify-apk.sh; \
     # The legacy cont-init.d/services.d scripts call these by their v2 paths
     for tool in with-contenv s6-setuidgid s6-svc; do \
         [ -e "/usr/bin/${tool}" ] || ln -s "/command/${tool}" "/usr/bin/${tool}"; \

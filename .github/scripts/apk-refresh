@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+"""Validate APK refresh metadata, or probe a disposable runtime without host mounts."""
+import argparse
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+REGISTRY = re.compile(r'https://dl-cdn\.alpinelinux\.org/alpine\?branch=v(\d+\.\d+)&components=main,community&arch=x86_64')
+PACKAGE = re.compile(r'([a-z0-9][a-z0-9+_.-]*)=([0-9]+(?:\.[0-9]+)*[a-z]?(?:_(?:alpha|beta|pre|rc)[0-9]*)?(?:_(?:cvs|svn|git|hg|p)[0-9]*)?-r[0-9]+)')
+
+
+def parse_manifest(text):
+    lines = text.splitlines()
+    if not lines or not lines[0].startswith('# registry='):
+        raise ValueError('missing registry header')
+    registry = lines[0][len('# registry='):]
+    if not REGISTRY.fullmatch(registry):
+        raise ValueError('invalid registry: require fixed Alpine branch, main/community, x86_64')
+    packages = {}
+    for line in lines[1:]:
+        match = PACKAGE.fullmatch(line)
+        if not match or match[1] in packages:
+            raise ValueError(f'invalid or duplicate APK target: {line!r}')
+        packages[match[1]] = match[2]
+    if not packages or lines[1:] != sorted(lines[1:]):
+        raise ValueError('APK inventory must be nonempty and sorted')
+    return packages, registry
+
+
+def validate(root=ROOT):
+    packages, registry = parse_manifest((root / 'runtime/apk-refresh.txt').read_text())
+    recipe = (root / 'runtime/Containerfile').read_text()
+    base = re.search(r'^FROM docker.io/library/alpine:(\d+\.\d+)\.\d+@sha256:[0-9a-f]{64}$', recipe, re.M)
+    if not base or REGISTRY.fullmatch(registry)[1] != base[1]:
+        raise ValueError('base image / APK registry branch mismatch; reviewed migration required')
+    for name in ('php83', 'php83-fpm'):
+        value = packages.get(name, '')
+        match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)-r\d+', value)
+        if not match or tuple(map(int, match.groups())) < (8, 3, 36):
+            raise ValueError(f'{name} target below security floor 8.3.36')
+        if f"'{name}>=8.3.36-r0'" not in recipe:
+            raise ValueError('PHP installation security floor removed')
+    return packages, registry
+
+
+def probe(image, root=ROOT, network='slirp4netns', previous=None):
+    """Upgrade actual installed packages; reject unavailable targets and any downgrade.
+
+    Metadata and package writes are confined to the disposable container. Podman
+    propagates apk update/upgrade errors; no successful/no-update report on failure.
+    """
+    validate(root)
+    manifest = (root / 'runtime/apk-refresh.txt').read_text()
+    verifier = (root / 'runtime/verify-apk.sh').read_text()
+    prior = previous or manifest
+    parse_manifest(prior)
+    # All file contents are positional arguments, never interpolated shell source.
+    shell = r'''
+set -eu
+printf '%s' "$1" > /tmp/apk-targets
+printf '%s' "$2" > /tmp/verify-apk.sh
+printf '%s' "$3" > /tmp/apk-prior
+snapshot() { awk '/^P:/{p=substr($0,3)} /^V:/{print p "=" substr($0,3)}' /lib/apk/db/installed | sort; }
+snapshot > /tmp/apk-before
+# Strictly refresh every configured index before accepting an upgrade result.
+apk update >&2
+apk upgrade --no-cache >&2
+sh /tmp/verify-apk.sh /tmp/apk-targets /tmp/apk-before >&2
+# Compare recorded pins using native apk ordering, including -rN and calendar versions.
+while IFS='=' read -r package old; do
+    case "$package" in \#*|'') continue;; esac
+    target=$(awk -F= -v p="$package" '$1==p {print $2}' /tmp/apk-targets)
+    [ -n "$target" ] && [ "$(apk version -t "$target" "$old")" != '<' ] || {
+        echo "Recorded target downgrade/removal: $package $old -> $target" >&2; exit 1;
+    }
+done < /tmp/apk-prior
+printf '\nBEFORE\n'; cat /tmp/apk-before
+printf 'AFTER\n'; snapshot
+'''
+    result = subprocess.run([
+        'podman', 'run', '--rm', '--image-volume=ignore', '--cap-drop=all',
+        '--security-opt=no-new-privileges', f'--network={network}',
+        '--entrypoint=/bin/sh', image, '-ec', shell, 'apk-probe', manifest, verifier, prior,
+    ], check=True, text=True, capture_output=True, timeout=240)
+    sys.stderr.write(result.stderr)
+    before_text, after_text = result.stdout.split('BEFORE\n', 1)[1].split('AFTER\n', 1)
+    def snapshot(text):
+        return dict(line.split('=', 1) for line in text.splitlines() if line)
+    before, after = snapshot(before_text), snapshot(after_text)
+    changed = {name: {'before': old, 'after': after[name]} for name, old in before.items() if after.get(name) != old}
+    return {'image': image, 'installed': len(after), 'changed': changed, 'before': before, 'after': after}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['validate', 'probe'])
+    parser.add_argument('--image', help='exact immutable runtime image or locally built candidate')
+    parser.add_argument('--network', default='slirp4netns', help='use none to test fail-closed network behavior')
+    parser.add_argument('--base', help='Git ref whose recorded targets must not be downgraded')
+    args = parser.parse_args()
+    try:
+        if args.command == 'validate':
+            packages, registry = validate()
+            print(json.dumps({'targets': len(packages), 'registry': registry}, sort_keys=True))
+        else:
+            if not args.image:
+                parser.error('probe requires --image')
+            prior = None
+            if args.base:
+                subprocess.run(['git', 'rev-parse', '--verify', f'{args.base}^{{commit}}'], check=True, capture_output=True, text=True)
+                exists = subprocess.run(['git', 'cat-file', '-e', f'{args.base}:runtime/apk-refresh.txt'], capture_output=True)
+                if exists.returncode == 0:
+                    prior = subprocess.check_output(['git', 'show', f'{args.base}:runtime/apk-refresh.txt'], text=True)
+                    parse_manifest(prior)
+            print(json.dumps(probe(args.image, network=args.network, previous=prior), sort_keys=True, indent=2))
+    except (ValueError, OSError, subprocess.SubprocessError) as exc:
+        if isinstance(exc, subprocess.CalledProcessError):
+            sys.stderr.write(exc.stderr or '')
+        print(f'APK refresh check failed: {exc}', file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
