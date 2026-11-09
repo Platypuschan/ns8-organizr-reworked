@@ -5,6 +5,7 @@ import subprocess
 import shutil
 import tempfile
 import unittest
+import uuid
 import test_apk_refresh as contract
 ROOT = contract.ROOT
 
@@ -29,6 +30,13 @@ class RuntimeProbe(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             runtime = Path(td) / 'runtime'
             shutil.copytree(ROOT / 'runtime', runtime)
+            # Isolate this three-build experiment from layers left by prior
+            # runs: otherwise the "changed" fixture can already be cached.
+            recipe = runtime / 'Containerfile'
+            source = recipe.read_text()
+            # The recipe starts with comments, so insert immediately after FROM.
+            marker = next(line for line in source.splitlines() if line.startswith('FROM '))
+            recipe.write_text(source.replace(marker, marker + '\nLABEL io.organizr.cache-test=' + uuid.uuid4().hex, 1))
             def build():
                 result = subprocess.run(['podman', 'build', '--layers', '-t', 'localhost/organizr-apk-cache:test', str(runtime)], check=True, text=True, capture_output=True, timeout=300)
                 return result.stdout + result.stderr

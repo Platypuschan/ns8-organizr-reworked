@@ -45,6 +45,12 @@
     ],
     "datasourceTemplate": "apk",
     "versioningTemplate": "apk"
+  }, {
+    "customType": "regex",
+    "description": "NS8 host stylesheet test image",
+    "managerFilePatterns": ["/^\\.github/workflows/validate\\.yml$/"],
+    "matchStrings": ["NS8_CORE_IMAGE: (?<depName>ghcr\\.io/nethserver/core):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"],
+    "datasourceTemplate": "docker"
   }],
   "packageRules": [
     {
@@ -104,6 +110,14 @@
       "matchUpdateTypes": ["minor", "major"],
       "dependencyDashboardApproval": true,
       "automerge": false
+    },
+    {
+      "description": "Keep future framework and lint-tool major migrations coordinated and manual",
+      "matchManagers": ["npm"],
+      "matchFileNames": ["ui/package.json"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "UI major migration",
+      "groupSlug": "ui-major-migration"
     },
     {
       "description": "Show major migrations in the dashboard, but require explicit approval before building",

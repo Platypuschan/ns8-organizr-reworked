@@ -347,6 +347,58 @@ test.describe("settings page", () => {
     await expect(ui.getByText("s3cret-pw")).toHaveCount(0);
   });
 
+  for (const credential of ["username", "password"]) {
+    test(`copying recovery ${credential} does not save unsaved settings`, async ({
+      ns8,
+    }) => {
+      const ui = await openSettings(ns8);
+      const host = ui.getByLabel("Organizr hostname (FQDN)");
+      await host.fill("unsaved.example.org");
+      await ui.locator(".cv-combo-box, .bx--combo-box").first().click();
+      await ui.getByText("other.example.org", { exact: true }).click();
+      const searchBase = ui.getByLabel("User search base DN (optional)");
+      await searchBase.fill("OU=Unsaved,DC=other,DC=example,DC=org");
+      await ui.getByText("Request LE Certificate").first().click();
+      await ui.getByText("Force HTTPS").first().click();
+      await ui.getByText("Initial administrator", { exact: true }).click();
+      const task = await ns8.task("get-setup-credentials");
+      const credentials = {
+        username: "ns8-recovery-admin",
+        password: "s3cret-pw",
+      };
+      await ns8.complete("get-setup-credentials", task.eventId, credentials);
+      const snippet = ui.locator("[data-code-snippet]").filter({
+        hasText: credentials[credential],
+      });
+      // Record the real component's clipboard attempt without OS permissions.
+      await snippet.evaluate(() => {
+        window.__clipboardWrites = [];
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: {
+            writeText: async (text) =>
+              window.__clipboardWrites.push(text.trim()),
+          },
+        });
+      });
+      await snippet.getByRole("button", { name: "Copy to clipboard" }).click();
+      expect(await snippet.evaluate(() => window.__clipboardWrites)).toEqual([
+        credentials[credential],
+      ]);
+      // Let any request caused by the click reach the fixture API recorder.
+      await ns8.page.waitForLoadState("networkidle");
+      expect(
+        ns8.requests.filter((r) => r.payload?.action === "configure-module"),
+        "copy must not submit the form or persist unsaved host/AD/HTTPS settings",
+      ).toHaveLength(0);
+      await expect(host).toHaveValue("unsaved.example.org");
+      await expect(searchBase).toHaveValue(
+        "OU=Unsaved,DC=other,DC=example,DC=org",
+      );
+      await expect(ui.getByRole("button", { name: "Save" })).toBeEnabled();
+    });
+  }
+
   test("get-configuration failure is shown and disables nothing permanently", async ({
     ns8,
   }) => {
@@ -484,105 +536,112 @@ test.describe("French locale falls back to English", () => {
   });
 });
 
-test.describe("visual smoke (Carbon v10 stand-in CSS, not NS8 branding)", () => {
-  test("Carbon classes are rendered and pages have layout", async ({
-    ns8,
-  }, testInfo) => {
-    const ui = await ns8.open({ hash: "#/apps/organizr1?page=settings" });
-    const conf = await ns8.task("get-configuration");
-    const domains = await ns8.task("list-user-domains");
-    await ns8.complete("list-user-domains", domains.eventId, {
-      domains: [{ name: "ad.example.org", schema: "ad" }],
-    });
-    await ns8.complete("get-configuration", conf.eventId, configuration);
-    const save = ui.getByRole("button", { name: "Save" });
-    await expect(save).toBeVisible();
-    const bg = await save.evaluate(
-      (el) => getComputedStyle(el).backgroundColor,
-    );
-    expect(bg).not.toBe("rgba(0, 0, 0, 0)");
-    const box = await ui.getByLabel("Organizr hostname (FQDN)").boundingBox();
-    expect(box.width).toBeGreaterThan(200);
-    // Carbon spacing: fields are separated like the NS8 forms ($spacing-06 = 1.5rem)
-    const hostBox = await ui
-      .getByLabel("Organizr hostname (FQDN)")
-      .boundingBox();
-    const leBox = await ui.getByText("Request LE Certificate").boundingBox();
-    expect(leBox.y - (hostBox.y + hostBox.height)).toBeGreaterThanOrEqual(24);
-    const dnBox = await ui
-      .getByLabel("User search base DN (optional)")
-      .boundingBox();
-    const domainBox = await ui.getByText("NS8 AD account domain").boundingBox();
-    expect(dnBox.y - domainBox.y).toBeGreaterThan(40);
-    if (process.env.SHOT_DIR) {
-      await ns8.page.screenshot({
-        path: `${process.env.SHOT_DIR}/settings.png`,
+test.describe(
+  process.env.NS8_CORE_CSS
+    ? "visual smoke (published NS8 core CSS, fixture API)"
+    : "visual smoke (Carbon v10 stand-in CSS, not NS8 branding)",
+  () => {
+    test("Carbon classes are rendered and pages have layout", async ({
+      ns8,
+    }, testInfo) => {
+      const ui = await ns8.open({ hash: "#/apps/organizr1?page=settings" });
+      const conf = await ns8.task("get-configuration");
+      const domains = await ns8.task("list-user-domains");
+      await ns8.complete("list-user-domains", domains.eventId, {
+        domains: [{ name: "ad.example.org", schema: "ad" }],
       });
-    }
-    await testInfo.attach("settings", {
-      body: await ns8.page.screenshot(),
-      contentType: "image/png",
-    });
-  });
-
-  test("status cards form a Carbon grid with icons and tags", async ({
-    ns8,
-  }) => {
-    const { ui, conf, stat, repos } = await startStatus(ns8);
-    await ns8.complete("get-configuration", conf.eventId, configuration);
-    await ns8.complete("get-status", stat.eventId, status);
-    await ns8.complete("list-backup-repositories", repos.eventId, {
-      repositories: [{ id: "r1", name: "repo a" }],
-    });
-    const backups = await ns8.task("list-backups");
-    await ns8.complete("list-backups", backups.eventId, {
-      backups: [
-        {
-          id: "b1",
-          name: "daily",
-          repository: "r1",
-          enabled: true,
-          instances: [
-            {
-              module_id: "organizr1",
-              status: {
-                success: true,
-                start: 1700000000,
-                end: 1700000125,
-                total_size: 5242880,
-                total_file_count: 42,
-              },
-            },
-          ],
-        },
-      ],
-    });
-    await expect(ui.getByText("Success", { exact: true })).toBeVisible();
-    await expect(ui.getByText("repo a")).toBeVisible();
-    await expect(ui.getByText("2m 5s")).toBeVisible();
-    // completion time: relative text, absolute time in the tooltip
-    await expect(ui.getByText(/ago$/)).toBeVisible();
-    await expect(ui.locator(".bx--tooltip__content").last()).toHaveText(
-      "2023-11-14 22:15:25",
-    );
-    await expect(ui.getByText("5 MiB")).toBeVisible();
-    const tops = await ui
-      .locator(".info-card, .ns-backup-card, .ns-system-logs-card")
-      .evaluateAll((els) =>
-        els.map((e) => Math.round(e.getBoundingClientRect().top)),
+      await ns8.complete("get-configuration", conf.eventId, configuration);
+      const save = ui.getByRole("button", { name: "Save" });
+      await expect(save).toBeVisible();
+      const bg = await save.evaluate(
+        (el) => getComputedStyle(el).backgroundColor,
       );
-    expect(tops.length).toBe(5);
-    // same wrapping as the Vue 2 UI at this width: two cards per row
-    expect(tops[0]).toBe(tops[1]);
-    expect(tops[2]).toBeGreaterThan(tops[0]);
-    // carbon icons render as svg inside the cards
-    await expect(ui.locator(".info-card svg").first()).toBeVisible();
-    await expect(ui.locator(".bx--tag--red")).toHaveText("failed");
-    if (process.env.SHOT_DIR) {
-      await ns8.page.screenshot({
-        path: `${process.env.SHOT_DIR}/status.png`,
-        fullPage: true,
+      expect(bg).not.toBe("rgba(0, 0, 0, 0)");
+      const box = await ui.getByLabel("Organizr hostname (FQDN)").boundingBox();
+      expect(box.width).toBeGreaterThan(200);
+      // Carbon spacing: fields are separated like the NS8 forms ($spacing-06 = 1.5rem)
+      const hostBox = await ui
+        .getByLabel("Organizr hostname (FQDN)")
+        .boundingBox();
+      const leBox = await ui.getByText("Request LE Certificate").boundingBox();
+      expect(leBox.y - (hostBox.y + hostBox.height)).toBeGreaterThanOrEqual(24);
+      const dnBox = await ui
+        .getByLabel("User search base DN (optional)")
+        .boundingBox();
+      const domainBox = await ui
+        .getByText("NS8 AD account domain")
+        .boundingBox();
+      expect(dnBox.y - domainBox.y).toBeGreaterThan(40);
+      if (process.env.SHOT_DIR) {
+        await ns8.page.screenshot({
+          path: `${process.env.SHOT_DIR}/settings.png`,
+        });
+      }
+      await testInfo.attach("settings", {
+        body: await ns8.page.screenshot(),
+        contentType: "image/png",
       });
-    }
-  });
-});
+    });
+
+    test("status cards form a Carbon grid with icons and tags", async ({
+      ns8,
+    }) => {
+      const { ui, conf, stat, repos } = await startStatus(ns8);
+      await ns8.complete("get-configuration", conf.eventId, configuration);
+      await ns8.complete("get-status", stat.eventId, status);
+      await ns8.complete("list-backup-repositories", repos.eventId, {
+        repositories: [{ id: "r1", name: "repo a" }],
+      });
+      const backups = await ns8.task("list-backups");
+      await ns8.complete("list-backups", backups.eventId, {
+        backups: [
+          {
+            id: "b1",
+            name: "daily",
+            repository: "r1",
+            enabled: true,
+            instances: [
+              {
+                module_id: "organizr1",
+                status: {
+                  success: true,
+                  start: 1700000000,
+                  end: 1700000125,
+                  total_size: 5242880,
+                  total_file_count: 42,
+                },
+              },
+            ],
+          },
+        ],
+      });
+      await expect(ui.getByText("Success", { exact: true })).toBeVisible();
+      await expect(ui.getByText("repo a")).toBeVisible();
+      await expect(ui.getByText("2m 5s")).toBeVisible();
+      // completion time: relative text, absolute time in the tooltip
+      await expect(ui.getByText(/ago$/)).toBeVisible();
+      await expect(ui.locator(".bx--tooltip__content").last()).toHaveText(
+        "2023-11-14 22:15:25",
+      );
+      await expect(ui.getByText("5 MiB")).toBeVisible();
+      const tops = await ui
+        .locator(".info-card, .ns-backup-card, .ns-system-logs-card")
+        .evaluateAll((els) =>
+          els.map((e) => Math.round(e.getBoundingClientRect().top)),
+        );
+      expect(tops.length).toBe(5);
+      // same wrapping as the Vue 2 UI at this width: two cards per row
+      expect(tops[0]).toBe(tops[1]);
+      expect(tops[2]).toBeGreaterThan(tops[0]);
+      // carbon icons render as svg inside the cards
+      await expect(ui.locator(".info-card svg").first()).toBeVisible();
+      await expect(ui.locator(".bx--tag--red")).toHaveText("failed");
+      if (process.env.SHOT_DIR) {
+        await ns8.page.screenshot({
+          path: `${process.env.SHOT_DIR}/status.png`,
+          fullPage: true,
+        });
+      }
+    });
+  },
+);

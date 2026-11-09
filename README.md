@@ -213,13 +213,15 @@ hide all npm major migrations.
 - Routine UI updates are grouped. Node consumers form a separate Node 24 group;
   moving to a new Node major requires testing Corepack and the real UI build
   bootstrap first and adjusting `allowedVersions` explicitly.
-- Major updates appear in the **Dependency updates** dashboard and require
-  dashboard approval before a PR is created. They still require manual merge.
+- Major updates require dashboard approval and manual merge; UI framework and
+  lint-tool majors are grouped into one coordinated migration. Security
+  proposals can bypass normal PR-creation approval/limits, but never the
+  explicit major-update automerge prohibition or required acceptance checks.
 - At most three regular dependency PRs are open concurrently, with at most two
   created per hour. Existing open PRs are not forcibly closed by this limit.
 - Ordinary releases wait five days; vulnerability alerts bypass that age delay.
   Alerts stay enabled without the old preset's explicit Vue suppression. This
-  does not mean the legacy Vue 2 stack is supported or free of vulnerabilities.
+  is not a guarantee that the supported Vue 3 stack is free of vulnerabilities.
 - Yarn lockfile maintenance runs before 06:00 UTC on Mondays, when Renovate
   next visits the repository. This is a bot scheduling window, not a guaranteed
   execution time. Security PRs can bypass ordinary scheduling and PR limits.
@@ -240,21 +242,32 @@ The policy takes effect only after `renovate.json` reaches `main`. Existing
 Renovate PRs may need a bot rebase/retry to pick up version bumps and regrouping;
 this configuration change neither merges nor manually rewrites those PRs.
 
-### Runtime package refresh boundary
+### Package-only Alpine runtime refreshes
 
-Renovate's Alpine image updates rebuild `runtime/`, running `apk upgrade` and
-`apk add` again. It does **not** individually track the unpinned PHP/nginx/s6 APK
-packages. If Alpine publishes a package fix without changing the base image tag
-or digest, Renovate may not propose a rebuild. Re-running CI on an unchanged
-runtime tree does not help: the existing immutable runtime tag is reused.
+Renovate also tracks the versions of all installed APK packages, including
+transitive libraries, in [`runtime/apk-refresh.txt`](runtime/apk-refresh.txt).
+The native APK datasource can propose an update even when the Alpine base
+image tag and digest have not changed. The manifest is copied **before** the
+APK installation layer, so its change invalidates that cache and creates a new
+immutable runtime tree tag; the native version-bump rule advances the module.
 
-For such package-only fixes, make a tracked change under `runtime/` (for example
-an explanatory package-floor change in `runtime/Containerfile`), raise
-`CATALOG_VERSION`, and test the newly built runtime before publishing. Never
-replace an existing runtime tag. Automated package-only refresh detection is
-not implemented. Likewise, Organizr's existing startup updater remains separate
-from Renovate; restarting can change application code without a module release.
-No automatic instance updates or restarts are enabled by this policy.
+Base and package changes form one Alpine runtime update group. The build checks
+the complete installed package-name inventory, minimum target versions, PHP
+security floor and repository/architecture coherence. The **APK runtime
+contract** CI additionally probes real upgrades, rejects downgrades and tests
+network/metadata failures and cache invalidation. Failures block acceptance.
+
+This manifest is a rebuild request, **not** an exact solver lock or an APK
+repository snapshot. Adding/removing packages or migrating the Alpine branch
+requires reviewed inventory regeneration; those changes fail closed rather
+than silently dropping coverage. The inventory currently targets x86_64. See
+[`runtime/APK-REFRESH.md`](runtime/APK-REFRESH.md) for the regeneration/probe
+commands and limits. Ordinary package proposals retain the configured release
+age policy; an installed package upgrade is not proof of CVE remediation.
+
+Organizr's existing startup updater remains separate from Renovate; restarting
+can change application code without a module release. No automatic instance
+updates or restarts are enabled by this policy.
 
 The **Renovate policy** workflow validates the configuration with a pinned
 official Renovate image, extracts actual dependencies, and exercises the native
@@ -262,6 +275,23 @@ engine's package rules and release bumps. Its regression test imports Renovate
 internals intentionally, so engine updates must pass that test too.
 
 ## Testing
+
+The module UI uses Vue 3, Carbon Vue 3, Vue Router 5, Vuex 4 and vue-i18n 11,
+with the Babel 8 / ESLint 10 / Prettier 3 toolchain. The upstream NS8 UI library
+is Vue-2-only, so the required NS8 bridge/components are ported locally under
+[`ui/src/ns8`](ui/src/ns8/README.md); the parent NS8 core remains untouched.
+The fourteen reviewed major proposals and compatibility evidence are recorded
+in [`docs/major-update-migration.md`](docs/major-update-migration.md).
+
+The required **UI lint and build** job includes immutable installation, lint,
+production build, stack assertions and Chromium behavior tests for production
+and development bundles. CI extracts the real `core.css` from a digest-pinned
+NS8 core image without executing it; Renovate maintains that test-only digest.
+The host event bus/API is still an explicitly labelled fixture, not a real
+cluster. The development run additionally rejects Vue/i18n warnings. Tests
+cover settings, validation, task payloads, errors/loading, credentials, AD,
+status/backup cards, navigation and EN/DE/fallback labels. IBM installation
+telemetry is disabled in both UI CI and the production image builder.
 
 Static checks and the UI build run for every push and pull request. The module
 also includes Robot Framework install and update scenarios for the reusable NS8

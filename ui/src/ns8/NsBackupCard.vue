@@ -297,17 +297,15 @@ export default {
         const instance = backup.instances.find(
           (i) => i.module_id == this.moduleId,
         );
-        const instanceStatus = instance.status;
+        const instanceStatus = instance.status || { success: null };
         status[backup.id] = instanceStatus;
 
-        // overwrite summary status if it is undefined (first time), the
-        // status is not successful, or it is not run yet after a success
+        // Precedence: failure > pending/absent > success. An absent result
+        // must not double as the initial, not-yet-aggregated summary.
         if (
           summaryStatus === undefined ||
-          (instanceStatus && instanceStatus.success === false) ||
-          (instanceStatus &&
-            instanceStatus.success === null &&
-            summaryStatus === true)
+          instanceStatus.success === false ||
+          (instanceStatus.success !== true && summaryStatus.success === true)
         ) {
           summaryStatus = instanceStatus;
         }

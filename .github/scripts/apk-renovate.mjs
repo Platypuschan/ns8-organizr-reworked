@@ -1,13 +1,27 @@
 // APK policy tests run in official Renovate 44.222.5 (native RE2/APK).
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { GlobalConfig } from '/usr/local/renovate/dist/config/global.js';
 import { resolveConfigPresets } from '/usr/local/renovate/dist/config/presets/index.js';
 import { applyPackageRules } from '/usr/local/renovate/dist/util/package-rules/index.js';
 import { extractPackageFile } from '/usr/local/renovate/dist/modules/manager/custom/regex/index.js';
 import { extractPackageFile as extractDockerfile } from '/usr/local/renovate/dist/modules/manager/dockerfile/index.js';
 import { doAutoReplace } from '/usr/local/renovate/dist/workers/repository/update/branch/auto-replace.js';
-const updateDependency = ({ fileContent, upgrade }) => doAutoReplace({ ...manager, ...upgrade, manager: 'regex', packageFile: 'runtime/apk-refresh.txt', depIndex: extracted.deps.findIndex((d) => d.depName === upgrade.depName) }, fileContent, false);
+const updateDependency = async ({ fileContent, upgrade }) => {
+  // The real updater writes a file even for a no-op. Never mutate the checked-out
+  // inventory; this also permits read-only source mounts for policy validation.
+  const previous = { ...GlobalConfig.get() };
+  const localDir = await mkdtemp(join(tmpdir(), 'organizr-apk-updater-'));
+  GlobalConfig.set({ ...previous, localDir });
+  try {
+    return await doAutoReplace({ ...manager, ...upgrade, manager: 'regex', packageFile: 'runtime/apk-refresh.txt', depIndex: extracted.deps.findIndex((d) => d.depName === upgrade.depName) }, fileContent, false);
+  } finally {
+    GlobalConfig.set(previous);
+    await rm(localDir, { recursive: true, force: true });
+  }
+};
 import { ApkDatasource } from '/usr/local/renovate/dist/modules/datasource/apk/index.js';
 import { api as apk } from '/usr/local/renovate/dist/modules/versioning/apk/index.js';
 
@@ -46,6 +60,12 @@ for (const updateType of ['patch', 'digest', 'minor', 'major']) {
 // The real updater is byte-idempotent at the existing target.
 const zlib = extracted.deps.find((d) => d.depName === 'zlib');
 assert.equal(await updateDependency({ fileContent: manifest, upgrade: { ...zlib, newValue: zlib.currentValue } }), manifest);
+// Positive offline control from the actually published pre-refresh zlib version:
+// exercise the native updater even when the live registry has no new release.
+const staleManifest = manifest.replace(`\nzlib=${zlib.currentValue}\n`, '\nzlib=1.3.2-r1\n');
+assert.notEqual(staleManifest, manifest);
+const staleZlib = extractPackageFile(staleManifest, 'runtime/apk-refresh.txt', manager).deps.find((dep) => dep.depName === 'zlib');
+assert.equal(await updateDependency({ fileContent: staleManifest, upgrade: { ...staleZlib, newValue: zlib.currentValue } }), manifest);
 if (process.env.APK_NETWORK_TEST === '1') {
   const datasource = new ApkDatasource();
   let changed = 0;

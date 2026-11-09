@@ -112,6 +112,9 @@ jobs:
   ui:
     name: UI lint and build
     runs-on: ubuntu-latest
+    env:
+      IBM_TELEMETRY_DISABLED: "true"
+      NS8_CORE_IMAGE: ghcr.io/nethserver/core:latest@sha256:91f910e7e247d5806ce63abc54914edd59558b0bd7669a2337b678c295f3b5c6
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -136,4 +139,28 @@ jobs:
 
       - name: Build
         run: yarn build
+        working-directory: ui
+
+      - name: Check coordinated Vue 3 stack
+        run: yarn test:stack
+        working-directory: ui
+
+      - name: Extract real NS8 core stylesheet without running the image
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          id="$(podman create --entrypoint /bin/true --image-volume=ignore "$NS8_CORE_IMAGE")"
+          trap 'podman rm -f "$id" >/dev/null 2>&1 || true' EXIT
+          podman cp "$id:/var/lib/nethserver/cluster/ui/css/core.css" "$RUNNER_TEMP/ns8-core.css"
+
+      - name: Install browser
+        run: yarn playwright install --with-deps chromium
+        working-directory: ui
+
+      - name: Test module UI with production core CSS and fixture API
+        run: NS8_CORE_CSS="$RUNNER_TEMP/ns8-core.css" yarn test:e2e
+        working-directory: ui
+
+      - name: Check Vue development warnings with production core CSS
+        run: NS8_CORE_CSS="$RUNNER_TEMP/ns8-core.css" yarn test:e2e:dev
         working-directory: ui

@@ -39,6 +39,7 @@ nodebuilder="$(buildah from -v "${PWD}:/usr/src:Z" "${node_image}")"
 echo "Building static UI files..."
 buildah run \
     --workingdir=/usr/src/ui \
+    --env IBM_TELEMETRY_DISABLED=true \
     "${nodebuilder}" \
     sh -c "corepack enable && yarn install --immutable && yarn build"
 
@@ -47,6 +48,7 @@ buildah add "${container}" ui/dist /ui
 
 buildah config --entrypoint=/ \
     --label="org.opencontainers.image.source=${repository_source}" \
+    --label="org.opencontainers.image.revision=$(git rev-parse HEAD)" \
     --label="org.nethserver.authorizations=traefik@node:routeadm cluster:accountconsumer" \
     --label="org.nethserver.tcp-ports-demand=1" \
     --label="org.nethserver.rootfull=0" \

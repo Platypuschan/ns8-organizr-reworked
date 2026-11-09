@@ -12,6 +12,7 @@
     </div>
     <CvIconButton
       v-if="!hideCopyButton"
+      type="button"
       class="bx--copy-btn"
       kind="ghost"
       :icon="Copy20"

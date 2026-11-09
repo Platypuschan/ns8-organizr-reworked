@@ -318,17 +318,10 @@ export default {
       const taskAction = "get-configuration";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.getConfigurationAborted,
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.getConfigurationCompleted,
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.getConfigurationAborted,
+        completed: this.getConfigurationCompleted,
+      });
 
       const res = await to(
         this.createModuleTaskForApp(this.instanceName, {
@@ -421,23 +414,11 @@ export default {
       const taskAction = "configure-module";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.configureModuleAborted,
-      );
-
-      // register to task validation
-      this.core.$root.$once(
-        `${taskAction}-validation-failed-${eventId}`,
-        this.configureModuleValidationFailed,
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.configureModuleCompleted,
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.configureModuleAborted,
+        "validation-failed": this.configureModuleValidationFailed,
+        completed: this.configureModuleCompleted,
+      });
       const res = await to(
         this.createModuleTaskForApp(this.instanceName, {
           action: taskAction,
@@ -484,13 +465,12 @@ export default {
       this.error.listUserDomains = "";
       const taskAction = "list-user-domains";
       const eventId = this.getUuid();
-      this.core.$root.$once(`${taskAction}-aborted-${eventId}`, () => {
-        this.error.listUserDomains = this.$t("error.generic_error");
-        this.loading.listUserDomains = false;
-      });
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        (taskContext, taskResult) => {
+      this.subscribeTask(taskAction, eventId, {
+        aborted: () => {
+          this.error.listUserDomains = this.$t("error.generic_error");
+          this.loading.listUserDomains = false;
+        },
+        completed: (taskContext, taskResult) => {
           this.adDomains = taskResult.output.domains
             .filter((domain) => domain.schema === "ad")
             .map((domain) => ({
@@ -500,7 +480,7 @@ export default {
             }));
           this.loading.listUserDomains = false;
         },
-      );
+      });
       const [err] = await to(
         this.createClusterTaskForApp({
           action: taskAction,
@@ -536,15 +516,14 @@ export default {
       this.error.getCredentials = "";
       const taskAction = "get-setup-credentials";
       const eventId = this.getUuid();
-      this.core.$root.$once(`${taskAction}-aborted-${eventId}`, () => {
-        if (this.credentialsOpen) {
-          this.error.getCredentials = this.$t("error.generic_error");
-        }
-        this.loading.getCredentials = false;
-      });
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        (taskContext, taskResult) => {
+      this.subscribeTask(taskAction, eventId, {
+        aborted: () => {
+          if (this.credentialsOpen) {
+            this.error.getCredentials = this.$t("error.generic_error");
+          }
+          this.loading.getCredentials = false;
+        },
+        completed: (taskContext, taskResult) => {
           if (this.credentialsOpen) {
             this.adminUsername = taskResult.output.username;
             this.adminPassword = taskResult.output.password;
@@ -552,7 +531,7 @@ export default {
           }
           this.loading.getCredentials = false;
         },
-      );
+      });
       const [err] = await to(
         this.createModuleTaskForApp(this.instanceName, {
           action: taskAction,

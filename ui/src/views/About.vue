@@ -228,17 +228,10 @@ export default {
       const taskAction = "list-installed-modules";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.listInstalledModulesAborted,
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.listInstalledModulesCompleted,
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.listInstalledModulesAborted,
+        completed: this.listInstalledModulesCompleted,
+      });
 
       const res = await to(
         this.createClusterTaskForApp({

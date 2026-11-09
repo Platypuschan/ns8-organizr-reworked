@@ -19,6 +19,10 @@ const hostHtml = readFileSync(
   fileURLToPath(new URL("./fixture/host.html", import.meta.url)),
   "utf8",
 );
+// The CSS can be real while the host API/event bus remains a labelled fixture.
+const realCoreCss = process.env.NS8_CORE_CSS
+  ? readFileSync(process.env.NS8_CORE_CSS, "utf8")
+  : null;
 
 export const test = base.extend({
   // a fresh fixture "core" page per test with request recording
@@ -42,10 +46,10 @@ export const test = base.extend({
         status: 200,
         contentType: "text/css",
         body:
+          realCoreCss ??
           carbonCss +
-          // FIXTURE approximation of the core layout: content sits right of
-          // the fixed 16rem side navigation (the real core.css does this)
-          "\n.app-content{margin-left:16rem !important;padding-top:1rem}\n",
+            // Fallback-only approximation; CI supplies real NS8 core.css.
+            "\n.app-content{margin-left:16rem !important;padding-top:1rem}\n",
       }),
     );
     await page.route("**/fixture-api/**", async (route) => {

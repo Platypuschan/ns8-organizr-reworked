@@ -394,17 +394,10 @@ export default {
       const taskAction = "get-configuration";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.getConfigurationAborted,
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.getConfigurationCompleted,
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.getConfigurationAborted,
+        completed: this.getConfigurationCompleted,
+      });
 
       const res = await to(
         this.createModuleTaskForApp(this.instanceName, {
@@ -441,17 +434,10 @@ export default {
       const taskAction = "get-status";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.getStatusAborted,
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.getStatusCompleted,
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.getStatusAborted,
+        completed: this.getStatusCompleted,
+      });
 
       const res = await to(
         this.createModuleTaskForApp(this.instanceName, {
@@ -487,17 +473,10 @@ export default {
       const taskAction = "list-backup-repositories";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.listBackupRepositoriesAborted,
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.listBackupRepositoriesCompleted,
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.listBackupRepositoriesAborted,
+        completed: this.listBackupRepositoriesCompleted,
+      });
 
       const res = await to(
         this.createClusterTaskForApp({
@@ -537,17 +516,10 @@ export default {
       const taskAction = "list-backups";
       const eventId = this.getUuid();
 
-      // register to task error
-      this.core.$root.$once(
-        `${taskAction}-aborted-${eventId}`,
-        this.listBackupsAborted,
-      );
-
-      // register to task completion
-      this.core.$root.$once(
-        `${taskAction}-completed-${eventId}`,
-        this.listBackupsCompleted,
-      );
+      this.subscribeTask(taskAction, eventId, {
+        aborted: this.listBackupsAborted,
+        completed: this.listBackupsCompleted,
+      });
 
       const res = await to(
         this.createClusterTaskForApp({

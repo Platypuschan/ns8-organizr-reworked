@@ -241,22 +241,64 @@ export const QueryParamService = {
   },
 };
 
+const taskOwners = new WeakMap();
+
 export const TaskService = {
   name: "TaskService",
+  created() {
+    taskOwners.set(this, { disposed: false, subscriptions: new Map() });
+  },
+  beforeUnmount() {
+    const owner = taskOwners.get(this);
+    owner.disposed = true;
+    for (const cleanup of owner.subscriptions.values()) cleanup();
+    clearInterval(this.urlCheckInterval);
+  },
   methods: {
+    subscribeTask(taskAction, eventId, outcomes) {
+      const owner = taskOwners.get(this);
+      if (owner.disposed) return;
+      const bus = this.core.$root;
+      let active = true;
+      const listeners = [];
+      const cleanup = () => {
+        active = false;
+        for (const [event, handler] of listeners) bus.$off(event, handler);
+        owner.subscriptions.delete(eventId);
+      };
+      owner.subscriptions.set(eventId, cleanup);
+      for (const [outcome, callback] of Object.entries(outcomes)) {
+        const event = `${taskAction}-${outcome}-${eventId}`;
+        const handler = (...args) => {
+          if (!active || owner.disposed) return;
+          cleanup();
+          callback(...args);
+        };
+        listeners.push([event, handler]);
+        bus.$on(event, handler);
+      }
+    },
     createClusterTaskForApp(taskData) {
-      return this.axios.post(
-        `${window.parent.core.$root.apiUrl}/cluster/tasks`,
-        taskData,
-        { headers: { Authorization: `Bearer ${getToken()}` } },
-      );
+      return this.axios
+        .post(`${window.parent.core.$root.apiUrl}/cluster/tasks`, taskData, {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        })
+        .catch((error) => {
+          taskOwners.get(this).subscriptions.get(taskData.extra?.eventId)?.();
+          throw error;
+        });
     },
     createModuleTaskForApp(moduleId, taskData) {
-      return this.axios.post(
-        `${window.parent.core.$root.apiUrl}/module/${moduleId}/tasks`,
-        taskData,
-        { headers: { Authorization: `Bearer ${getToken()}` } },
-      );
+      return this.axios
+        .post(
+          `${window.parent.core.$root.apiUrl}/module/${moduleId}/tasks`,
+          taskData,
+          { headers: { Authorization: `Bearer ${getToken()}` } },
+        )
+        .catch((error) => {
+          taskOwners.get(this).subscriptions.get(taskData.extra?.eventId)?.();
+          throw error;
+        });
     },
     createErrorNotificationForApp(err, message) {
       console.error(err);
