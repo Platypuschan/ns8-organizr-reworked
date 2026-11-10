@@ -3,6 +3,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { compileString } from "sass";
+
+// Compile the real helper consumed by every view, not a copy of its tokens.
+// The NS8 host still owns the bx-- component CSS; importing Carbon 11 design
+// tokens must not introduce a second component stylesheet or unresolved vars.
+test("Carbon 11 helpers retain NS8 spacing and static brand colors", () => {
+  const css = compileString(
+    `@use "src/styles/carbon-utils" as *;
+     .probe {
+       margin: $spacing-05;
+       color: $interactive;
+       fill: $support-info;
+       border-color: $support-success;
+       outline-color: $support-error;
+     }`,
+    {
+      loadPaths: [
+        fileURLToPath(new URL("..", import.meta.url)),
+        fileURLToPath(new URL("../node_modules", import.meta.url)),
+      ],
+    },
+  ).css;
+  assert.match(css, /margin: 1rem/);
+  assert.match(css, /color: #00a2de/);
+  assert.match(css, /fill: #0090de/);
+  assert.match(css, /border-color: #24a148/);
+  assert.match(css, /outline-color: #da1e28/);
+  assert.doesNotMatch(css, /var\(|\.bx--|\.cds--/);
+});
 
 const installed = (name) =>
   JSON.parse(
@@ -17,6 +47,8 @@ const pkg = JSON.parse(
 );
 
 const expectedMajors = {
+  "carbon-components": 11,
+  vite: 8,
   vue: 3,
   vuex: 4,
   "vue-router": 5,

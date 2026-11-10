@@ -399,7 +399,7 @@ export default {
 .tooltip-with-text-trigger
   :deep(.bx--tooltip__trigger:not(.bx--btn--icon-only)) {
   font-size: 14px;
-  color: $interactive-01;
+  color: $interactive;
 }
 
 // interactive tooltip layout, from ns8-core _core.scss
@@ -412,13 +412,13 @@ export default {
 }
 
 .status-success {
-  color: $support-02;
-  fill: $support-02;
+  color: $support-success;
+  fill: $support-success;
 }
 
 .status-error {
-  color: $danger-01;
-  fill: $danger-01;
+  color: $support-error;
+  fill: $support-error;
 }
 
 .status-warning {

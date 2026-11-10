@@ -1,8 +1,7 @@
-// Design tokens for component styles: Carbon v10 variables with NS8 branding.
-// Only variables and mixins are imported here, no CSS is emitted.
-
-@import "./ns8-branding";
-@import "carbon-components/scss/globals/scss/vars";
+// Public Carbon 11 spacing API plus static NS8-branded semantic colors.
+// Forward variables only; component CSS continues to come from NS8 core.
+@forward "carbon-components/scss/spacing";
+@forward "./ns8-branding";
 
 // Values that are not Carbon tokens, from ns8-core core/ui/src/styles
 $breakpoint-medium: 671px;

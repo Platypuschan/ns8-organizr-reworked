@@ -1,11 +1,10 @@
-@import "carbon-components/scss/globals/scss/vendor/@carbon/type/scss/font-family.scss";
-@import "carbon-components/scss/globals/scss/vendor/@carbon/layout/scss/breakpoint.scss";
-@import "carbon-components/scss/globals/scss/typography.scss";
-@import "carbon-components/scss/globals/scss/vars.scss";
+// Static tokens for the NS8 host's bx-- component stylesheet. Carbon 11's
+// public Sass modules replace the removed v10 globals/vendor implementation.
+// Do not emit Carbon 11 component CSS into the Carbon 10 NS8 host.
+@forward "./ns8-tokens";
 
 $breakpoint-x-large: 1311px;
 $breakpoint-large: 1055px;
-$breakpoint-medium: 671px;
 $breakpoint-small: 319px;
 $notification-drawer-width: 27rem;
 $notification-drawer-width-small-screen: 16rem;
