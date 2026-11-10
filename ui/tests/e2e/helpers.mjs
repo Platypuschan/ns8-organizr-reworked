@@ -6,23 +6,18 @@ import { test as base, expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const carbonCss = readFileSync(
-  fileURLToPath(
-    new URL(
-      "../../node_modules/carbon-components/css/carbon-components.min.css",
-      import.meta.url,
-    ),
-  ),
-  "utf8",
-);
+// The host owns the bx-- stylesheet; Carbon 11 no longer ships the old v10
+// compiled CSS. Require the real pinned NS8 stylesheet, just as CI does, rather
+// than approximating the production host with an incompatible library theme.
+if (!process.env.NS8_CORE_CSS) {
+  throw new Error("NS8_CORE_CSS must point to the extracted NS8 core.css");
+}
+const realCoreCss = readFileSync(process.env.NS8_CORE_CSS, "utf8");
 const hostHtml = readFileSync(
   fileURLToPath(new URL("./fixture/host.html", import.meta.url)),
   "utf8",
 );
-// The CSS can be real while the host API/event bus remains a labelled fixture.
-const realCoreCss = process.env.NS8_CORE_CSS
-  ? readFileSync(process.env.NS8_CORE_CSS, "utf8")
-  : null;
+// The CSS is real while the host API/event bus remains a labelled fixture.
 
 export const test = base.extend({
   // a fresh fixture "core" page per test with request recording
@@ -39,17 +34,12 @@ export const test = base.extend({
     await page.route("**/__fixture__/host.html", (r) =>
       r.fulfill({ status: 200, contentType: "text/html", body: hostHtml }),
     );
-    // FIXTURE: the NS8 core serves the Carbon v10 stylesheet at this URL; the
-    // stand-in serves plain carbon-components CSS (without NS8 branding).
+    // Production stylesheet from the pinned NS8 core image; API remains fixture.
     await page.route("**/cluster-admin/css/core.css", (r) =>
       r.fulfill({
         status: 200,
         contentType: "text/css",
-        body:
-          realCoreCss ??
-          carbonCss +
-            // Fallback-only approximation; CI supplies real NS8 core.css.
-            "\n.app-content{margin-left:16rem !important;padding-top:1rem}\n",
+        body: realCoreCss,
       }),
     );
     await page.route("**/fixture-api/**", async (route) => {
