@@ -126,6 +126,14 @@ class PreviousReleaseTest(unittest.TestCase):
         self.assertEqual(previous_release.newest_release(self.TAGS, "0.3.0"), "0.2.1")
         self.assertEqual(previous_release.newest_release(self.TAGS, "1.0.0"), "0.10.0")
 
+    def test_strict_update_baseline_is_older_than_published_target(self):
+        self.assertEqual(
+            previous_release.newest_release(self.TAGS, "0.2.1", strict_older=True), "0.2.0"
+        )
+        self.assertIsNone(
+            previous_release.newest_release(["0.2.1"], "0.2.1", strict_older=True)
+        )
+
     def test_no_release_returns_none(self):
         self.assertIsNone(previous_release.newest_release(["latest", "0.3.0"], "0.2.0"))
 
