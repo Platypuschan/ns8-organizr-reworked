@@ -77,6 +77,37 @@ async function listeners(page, eventId) {
   );
 }
 
+test("module and cluster task POSTs retain shared axios timeout and bearer auth", async ({
+  page,
+  ns8,
+}) => {
+  await page.addInitScript(() => {
+    window.__taskXhrs = [];
+    const send = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function (...args) {
+      window.__taskXhrs.push({ timeout: this.timeout });
+      return send.apply(this, args);
+    };
+  });
+  await ns8.open();
+  const moduleTask = await ns8.task("get-configuration");
+  const clusterTask = await ns8.task("list-backup-repositories");
+  expect(moduleTask.path).toBe("/module/organizr1/tasks");
+  expect(clusterTask.path).toBe("/cluster/tasks");
+  for (const task of [moduleTask, clusterTask]) {
+    expect(task.headers.authorization).toBe("Bearer fixture-token");
+    expect(task.payload.extra.eventId).toEqual(expect.any(String));
+  }
+  const timeouts = await page
+    .locator("#module")
+    .evaluate((iframe) =>
+      iframe.contentWindow.__taskXhrs.map((request) => request.timeout),
+    );
+  expect(timeouts.length).toBeGreaterThanOrEqual(2);
+  expect(timeouts.every((timeout) => timeout === 10000)).toBe(true);
+  expect(ns8.problems).toEqual([]);
+});
+
 test("Status unmount releases all subscriptions before delayed repository completion", async ({
   page,
   ns8,
