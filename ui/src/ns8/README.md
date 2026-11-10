@@ -17,5 +17,9 @@ built on Carbon Vue 3 (`@carbon/vue` 3):
   NsEmptyState, NsInfoCard, NsSystemdServiceCard, NsSystemLogsCard,
   NsBackupCard with the same props and Carbon (`bx--`) classes.
 
-Not ported (unused by this module): wizard, data table, modal, toast, timer,
-Lottie empty-state animation and the other lib components.
+Not ported (unused by this module): wizard, data table, modal, toast, timer
+and the other lib components.
+
+Task requests use the shared axios import directly, retaining the 10-second
+default timeout configured in `main.js`, bearer authentication, and task-event
+subscription cleanup. No Vue transport plugin is needed.

@@ -13,6 +13,25 @@ Tooling needs Node 24 with Corepack (the Containerfile uses
     yarn lint
     yarn build
 
+## Dependency metadata and security overrides
+
+`packageExtensions` in `.yarnrc.yml` supplies missing Vue peers along the
+Carbon Vue 3 → VueUse 4 core/shared → vue-demi chain. These are metadata fixes:
+they forward the application's Vue 3, without adding a second framework copy
+or silencing peer diagnostics. Remove them when upstream declares the peers.
+
+ESLint 10.14.0 and `@eslint/config-array` 0.23.5 still request minimatch 10,
+which is affected by [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+The two parent-scoped `resolutions` select minimatch 11.0.6 for these lint-only
+consumers. They use the retained `Minimatch` constructor and `match` API;
+Node 24 satisfies the new matcher engine requirement. Stack tests exercise
+brace/extglob/globstar patterns, dotfiles and ignores through ESLint, in
+addition to linting the real sources. Remove these overrides once upstream
+ranges select a fixed release. No audit finding is excluded.
+
+Carbon 11's deprecation remains accepted: the UI needs its public Sass tokens
+while NS8's host stylesheet and Carbon Vue 3 retain `bx--` component markup.
+
 ## Tests
 
 Before browser tests, extract the exact stylesheet used by CI without running
