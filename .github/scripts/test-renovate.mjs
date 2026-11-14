@@ -87,7 +87,7 @@ assert.equal(extracted.deps.length, 1);
 assert.equal(extracted.deps[0].depName, 'docker.io/library/node');
 assert.match(extracted.deps[0].currentValue, /^24\..+-slim$/);
 assert.equal(extracted.deps[0].datasource, 'docker');
-assert.equal(config.dependencyDashboard, true);
+assert.equal(config.dependencyDashboard.enabled, true);
 assert.equal(config.vulnerabilityAlerts.minimumReleaseAge, '0 days');
 assert.equal(config.automerge, true);
 assert.equal(config.platformAutomerge, false);
