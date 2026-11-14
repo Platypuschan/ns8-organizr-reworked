@@ -165,6 +165,22 @@ class PromotionTests(unittest.TestCase):
                     self.promote()
                 self.assertEqual(self.s.copies, [])
 
+    def test_attestation_requires_same_commit_apk_and_renovate_policy(self):
+        m = self.m
+        paths = ['.github/workflows/validate.yml', '.github/workflows/apk-refresh.yml',
+                 '.github/workflows/renovate-policy.yml']
+        runs = [dict(path=path, event='push', head_sha=self.sha,
+                     head_repository={'full_name': m.REPOSITORY}, run_number=1,
+                     run_attempt=1, status='completed', conclusion='success') for path in paths]
+        self.assertTrue(hasattr(m, 'validated_workflows'), 'APK and policy attestation gates missing')
+        self.assertTrue(m.validated_workflows(runs, self.sha))
+        for path in paths:
+            with self.subTest(path=path):
+                self.assertFalse(m.validated_workflows([r for r in runs if r['path'] != path], self.sha))
+                failed = [dict(r, conclusion='failure') if r['path'] == path else r for r in runs]
+                with self.assertRaises(ValueError):
+                    m.validated_workflows(failed, self.sha)
+
     def test_source_digest_or_revision_mismatch_blocks_copy(self):
         self.s.revisions[self.digest] = 'b' * 40
         with self.assertRaisesRegex(ValueError, 'source revision'):
