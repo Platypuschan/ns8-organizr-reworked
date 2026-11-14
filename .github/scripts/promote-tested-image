@@ -9,8 +9,12 @@ from pathlib import Path
 import re
 import subprocess
 
+# BEGIN MODULE CONFIG
+# Identity and independent same-commit push gates; never weaken required gates.
 IMAGE = 'ghcr.io/platypuschan/organizr-reworked'
 REPOSITORY = 'Platypuschan/ns8-organizr-reworked'
+REQUIRED_WORKFLOWS = ('.github/workflows/validate.yml', '.github/workflows/apk-refresh.yml', '.github/workflows/renovate-policy.yml')
+# END MODULE CONFIG
 DIGEST = re.compile(r'sha256:[0-9a-f]{64}')
 SHA = re.compile(r'[0-9a-f]{40}')
 VERSION = re.compile(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?')
@@ -196,11 +200,7 @@ def validated_run(runs, commit, workflow=".github/workflows/validate.yml"):
 
 
 def validated_workflows(runs, commit):
-    # These independent push workflows are existing required gates. In
-    # particular the APK runtime build must pass before a tested attestation.
-    return all(validated_run(runs, commit, workflow) for workflow in (
-        '.github/workflows/validate.yml', '.github/workflows/apk-refresh.yml',
-        '.github/workflows/renovate-policy.yml'))
+    return all(validated_run(runs, commit, workflow) for workflow in REQUIRED_WORKFLOWS)
 
 
 def main():
@@ -217,7 +217,7 @@ def main():
         for _ in range(80):
             runs = s.api(f'repos/{REPOSITORY}/actions/runs?head_sha={commit}&event=push&per_page=100')
             if validated_workflows(runs['workflow_runs'], commit):
-                print('Same-commit Validate, APK runtime and Renovate policy succeeded')
+                print('Same-commit required validation workflows succeeded')
                 return
             time.sleep(15)
         raise RuntimeError('same-commit validation workflows did not finish within 20 minutes')
