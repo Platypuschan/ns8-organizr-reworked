@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IBM_TELEMETRY_DISABLED: "true"
-      NS8_CORE_IMAGE: ghcr.io/nethserver/core:latest@sha256:91f910e7e247d5806ce63abc54914edd59558b0bd7669a2337b678c295f3b5c6
+      NS8_CORE_IMAGE: ghcr.io/nethserver/core:latest@sha256:a69fe55f2a793c3b354d81a0dd220a4ac3b715db55acb90a8b81084a1a8d88cf
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -125,7 +125,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: "24.22.2"
+          node-version: "24.22.3"
           cache: yarn
           cache-dependency-path: ui/yarn.lock
 
